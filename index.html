@@ -185,7 +185,9 @@ const P = {
   // reduced-drag slipstream ("rubber band"): a bird sitting in the wake ahead flies in co-moving
   // air, so its drag drops and a leader's surge is transmitted down the line as a wave.
   draftPull:4.2, slipWidth:2.2, slipDecay:7,
-  wakeSeek:0.6, slack:0.8,     // slack: how loosely a follower keeps its spacing before it flaps to correct                // how readily a bird slides toward the better air it feels across its wings
+  wakeSeek:0.6,                // how readily a bird slides toward the better air it feels across its wings
+  slack:0.8,                   // how loosely a follower keeps its spacing before it flaps to correct
+  clearView:0.8,               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
   // emergent leadership: muscle fatigue + individual variation + "pass a bird that's too slow for me"
   leadRotate:1, sustainPower:55, fatigueTime:40, fatigueSlow:0.25, passMargin:0.6, individuality:0.12, showWakes:1,
   // muscle (dynamic mode)
@@ -1163,6 +1165,12 @@ function stepBird(st, dt){
 //  5. PASS     -- if the bird I'm drafting keeps flying slower than I want to go, I pull out and
 //                 go by. A tiring leader slows down, fresher birds go past, and it drops back into
 //                 someone's wake to recover. That is the whole lead "rotation".
+//  6. CLEAR VIEW -- keep an open view ahead on at least one side. If there are birds ahead of me on
+//                 BOTH sides I'm boxed in: drift toward the less crowded side and ease back a rank
+//                 until one side opens up. (The "visual" hypothesis for V formations.) Without it,
+//                 boxed-in birds sit in the combined downwash of the birds around them -- measured
+//                 ~0.1 vs ~0.5 m/s upwash on an arm, and ~25% more flap power -- and the flock fills
+//                 in as a diamond instead of a V.
 const _sL=V3(), _sR=V3();
 function flockControl(st, dt){
   const T=st.tel, w0=windAt(st.pos);
@@ -1239,6 +1247,24 @@ function flockControl(st, dt){
   let feel = windAt(_sR).y - windAt(_sL).y;
   if(P.draft) feel += (st.upR - st.upL) + 0.25*P.draftPull*(st.dfR - st.dfL);
   let vlat = P.wakeSeek*feel;
+
+  // ---- 6. CLEAR VIEW: birds ahead of me (within a few lengths) on my -side and on my +side?
+  let aheadNeg=0, aheadPos=0;
+  if(tgt && P.clearView>0){
+    for(const b of birds){ if(b===st) continue; const [a,c]=rel(b);
+      if(a>0.5 && a<7){ if(c<-0.8 && c>-5) aheadNeg++; else if(c>0.8 && c<5) aheadPos++; } }
+  }
+  const boxed = aheadNeg>0 && aheadPos>0;
+  st.boxedT = boxed ? 1.0 : Math.max(0, (st.boxedT||0) - dt);   // keep going ~1 s after it opens up
+  if(boxed){
+    // head for the side with fewer birds; on a tie, keep going the way I already was
+    let nPos=0, nNeg=0;
+    for(const b of birds){ if(b===st) continue; const [a,c]=rel(b);
+      if(a>-2 && a<8 && Math.abs(c)<8 && Math.abs(c)>0.3){ if(c>0) nPos++; else nNeg++; } }
+    st.escDir = nPos<nNeg ? +1 : nNeg<nPos ? -1 : (st.escDir||(st.side||1));
+  }
+  const relocating = st.boxedT > 0;
+  if(relocating) vlat += P.clearView*st.escDir;
   // a little individual wander -- sensing noise, gusts on the body -- so ties break and nothing is
   // perfectly symmetric
   st.wander += -0.5*st.wander*dt + 0.35*Math.sqrt(dt)*gauss();
@@ -1268,7 +1294,7 @@ function flockControl(st, dt){
     const wait = isFinite(dBehind) ? clamp(1 - 0.05*(dBehind - 2*P.followDist), 0.8, 1) : 1;
     aheadV = st.vPref*wait; gap=0; desiredGap=0;
   } else {
-    gap = rel(tgt)[0]; desiredGap = P.followDist;
+    gap = rel(tgt)[0]; desiredGap = P.followDist + (relocating ? P.followDist : 0);   // ease back a rank to get past a neighbour
     aheadV = tgt.gsS!=null ? tgt.gsS : Math.hypot(tgt.vel.x, tgt.vel.z);
   }
   T.gap = gap;
@@ -1473,6 +1499,7 @@ const SCHEMA=[
    {k:'nBirds',label:'Number of birds',min:1,max:15,step:1,unit:'',hint:'rebuilds the flock in its starting arrangement'},
    {k:'slotDx',label:'Start spacing — along',min:1,max:5,step:0.1,unit:'m',hint:'only lays out the starting flock; after that each bird finds its own place'},
    {k:'slotDz',label:'Start spacing — across',min:0.6,max:4,step:0.1,unit:'m',hint:'only lays out the starting flock'},
+   {k:'clearView',label:'Keep a clear view',min:0,max:2,step:0.05,unit:'m/s',hint:'a bird with others ahead on BOTH sides drifts toward the open side and eases back. 0 = birds stay boxed in and the flock fills in as a diamond'},
    {k:'wakeSeek',label:'Wake seeking',min:0,max:2,step:0.05,unit:'×',hint:'how readily a bird slides toward the wing that feels more lift. 0 = it stays wherever it is'},
    {k:'draftStrength',label:'Draft upwash strength',min:0,max:4,step:0.1,unit:'×',hint:'lift bonus a bird gets in the wake ahead'},
    {k:'draftPull',label:'Slipstream pull',min:0,max:8,step:0.1,unit:'m/s',hint:'co-moving air in the wake — reduces a follower’s drag and couples the line (the "rubber band")'},
@@ -2018,6 +2045,7 @@ function updateHUD(){
     const up=telemetry.upwash||0;
     const draftTxt = up>0.05 ? ' Riding <span style="color:#8fe9df">+'+fmt(up)+' m/s upwash</span> off the bird ahead.'
                              : (P.draft? ' (feeling for the upwash)':'');
+    if((state.boxedT||0)>0) msg+='<span style="color:#ffcf6e">Boxed in</span> — birds ahead on both sides, so it is easing back toward the open side. ';
     if(telemetry.coasting) msg+='<span style="color:#9aa7ff">Coasting</span> '+fmt(telemetry.gap||0)+' m behind bird #'+state.leaderIdx+'.'+draftTxt;
     else msg+='<span style="color:var(--accent)">Flapping</span> to keep up with bird #'+state.leaderIdx+' ('+fmt(telemetry.gap||0)+' m back).'+draftTxt;
   } else if(birds.length>1 && state.passing!=null){

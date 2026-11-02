@@ -1,0 +1,67 @@
+[
+ {
+  "name": "12 birds, clear-view off (v13 as shipped)",
+  "secs": 300,
+  "P": {
+   "nBirds": 12,
+   "clearView": 0
+  }
+ },
+ {
+  "name": "12 birds, clear-view off r2",
+  "secs": 300,
+  "P": {
+   "nBirds": 12,
+   "clearView": 0
+  }
+ },
+ {
+  "name": "12 birds, clear-view on",
+  "secs": 300,
+  "P": {
+   "nBirds": 12
+  }
+ },
+ {
+  "name": "12 birds, clear-view on r2",
+  "secs": 300,
+  "P": {
+   "nBirds": 12
+  }
+ },
+ {
+  "name": "12 birds, clear-view 1.5",
+  "secs": 300,
+  "P": {
+   "nBirds": 12,
+   "clearView": 1.5
+  }
+ },
+ {
+  "name": "8 birds, clear-view on",
+  "secs": 300
+ },
+ {
+  "name": "12 birds calm, clear-view on",
+  "secs": 300,
+  "P": {
+   "nBirds": 12,
+   "turbulence": 0,
+   "skimEnable": 0
+  }
+ },
+ {
+  "name": "12 birds, clear-view on r3",
+  "secs": 300,
+  "P": {
+   "nBirds": 12
+  }
+ },
+ {
+  "name": "15 birds, clear-view on",
+  "secs": 300,
+  "P": {
+   "nBirds": 15
+  }
+ }
+]
