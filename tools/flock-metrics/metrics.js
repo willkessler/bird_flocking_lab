@@ -15,7 +15,7 @@ window.__run = function(opts){
   let closeCalls=0, passes=0, lastFront=-1, leadChanges=0, t=0, nextS=0, minY=1e9, minPair=1e9, maxSpread=0, samples=0;
   const shape={line:0,V:0,echelon:0,filled:0,mixed:0}, rel={inline:0,stag:0}, relSk={inline:0,stag:0};
   const intPow=[0,0], edgePow=[0,0]; let interiorAcc=0;
-  const balance={symmetric:0,lopsided:0,oneSided:0}, stringLen=[0,0,0,0,0,0]; let longestString=1;
+  const balance={symmetric:0,lopsided:0,oneSided:0}, stringLen=[0,0,0,0,0,0]; let longestString=1, skimSamples=0, skimStr3=0, cruiseSamples=0, cruiseStr3=0;
   const timeline=[];
   while(t<total){
     S.integrate(dt); t+=dt;
@@ -57,7 +57,8 @@ window.__run = function(opts){
       for(let i=0;i<n;i++){ let bd=1e9; for(let j=0;j<n;j++){ if(j===i) continue; const da=A[j]-A[i]; if(da<0.3||da>8) continue; const d=Math.hypot(da,C[j]-C[i]); if(d<bd){bd=d; ahead[i]=j;} } }
       let best=1;
       for(let i=0;i<n;i++){ let k=i, len=1; while(ahead[k]>=0 && Math.abs(C[ahead[k]]-C[k])<0.7 && len<n){ k=ahead[k]; len++; } best=Math.max(best,len); }
-      longestString=Math.max(longestString,best); stringLen[Math.min(best,5)]++; }
+      longestString=Math.max(longestString,best); stringLen[Math.min(best,5)]++;
+      if(S.skimState==='skim'){ skimSamples++; if(best>=3) skimStr3++; } else if(S.skimState==='cruise'){ cruiseSamples++; if(best>=3) cruiseStr3++; } }
     maxSpread=Math.max(maxSpread, Math.max(...A)-Math.min(...A));
     // whole-flock shape from the front bird: birds out to its left / right
     const nf=n-1; let cls;
@@ -74,7 +75,7 @@ window.__run = function(opts){
   const avg=v=>v&&v[1]>0? +(v[0]/v[1]).toFixed(1) : null;
   return {
     shape:pct(shape), armBalance:pct(balance),
-    stringPct:{'2':Math.round(100*stringLen[2]/Math.max(1,samples)),'3':Math.round(100*stringLen[3]/Math.max(1,samples)),'4':Math.round(100*stringLen[4]/Math.max(1,samples)),'5+':Math.round(100*stringLen[5]/Math.max(1,samples))}, longestString,
+    stringPct:{'2':Math.round(100*stringLen[2]/Math.max(1,samples)),'3':Math.round(100*stringLen[3]/Math.max(1,samples)),'4':Math.round(100*stringLen[4]/Math.max(1,samples)),'5+':Math.round(100*stringLen[5]/Math.max(1,samples))}, longestString, string3Cruise:Math.round(100*cruiseStr3/Math.max(1,cruiseSamples)), string3Skim:Math.round(100*skimStr3/Math.max(1,skimSamples)),
     interiorPct:Math.round(100*interiorAcc/Math.max(1,samples)),
     powerInterior:intPow[1]?+(intPow[0]/intPow[1]).toFixed(1):null, powerEdge:edgePow[1]?+(edgePow[0]/edgePow[1]).toFixed(1):null,
     inlinePct:Math.round(100*rel.inline/Math.max(1,rel.inline+rel.stag)),

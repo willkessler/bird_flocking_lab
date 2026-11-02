@@ -187,7 +187,8 @@ const P = {
   draftPull:4.2, slipWidth:2.2, slipDecay:7,
   wakeSeek:0.6,                // how readily a bird slides toward the better air it feels across its wings
   slack:0.8,                   // how loosely a follower keeps its spacing before it flaps to correct
-  clearView:0.8,               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
+  clearView:0.8,
+  wakeSink:1, altFreedom:1.5,  // trailing vortices sink behind a bird; each follower may sit up to altFreedom m above/below the flock               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
   // emergent leadership: muscle fatigue + individual variation + "pass a bird that's too slow for me"
   leadRotate:1, sustainPower:55, fatigueTime:40, fatigueSlow:0.25, passMargin:0.6, individuality:0.12, showWakes:1,
   // muscle (dynamic mode)
@@ -1309,8 +1310,14 @@ function flockControl(st, dt){
     st.brake = clamp(0.9*over + 0.3*(st.gsS - aheadV), 0, 1);
   }
 
-  // Everyone holds the shared base altitude of the skim cycle (the front bird's call).
-  st.targetAlt = flockBaseAlt;
+  // Height: the flock shares the base altitude of the skim cycle (the front bird's call), but each
+  // follower may sit a little above or below it -- drifting toward whichever height feels more upwash,
+  // and relaxing slowly back toward the flock's height. altFreedom = 0 keeps everyone level.
+  if(tgt && P.altFreedom>0 && P.draft){
+    st.altOff = (st.altOff||0) + dt*(P.wakeSeek*1.5*(st.upU - st.upD) - 0.05*(st.altOff||0));
+    st.altOff = clamp(st.altOff, skimState==='cruise' ? -P.altFreedom : -0.2, P.altFreedom);
+  } else st.altOff = (st.altOff||0)*(1 - Math.min(1, dt/2));
+  st.targetAlt = flockBaseAlt + st.altOff;
 
   if(P.flapStrategy==='intermittent'){
     const line=st.targetAlt||P.startAlt;
@@ -1360,35 +1367,41 @@ function computeWakes(){
   const bprime=(Math.PI/4)*2*P.span, tipZ=P.span*0.9;
   const L=P.mass*G, Gam=L/(rho*Vref*bprime);   // bound-circulation estimate (each bird ~ its weight)
   const k=Gam/(2*Math.PI);
+  // The trailing vortices SINK behind a bird at roughly the far-field downwash, w ~ 2L/(rho V pi b'^2)
+  // (~0.5 m/s for a pelican), so a bird further back -- or a little higher -- sits above the worst of it.
+  const wSink = P.wakeSink ? 2*L/(rho*Vref*Math.PI*bprime*bprime) : 0;
   const sw2=Math.max(P.slipWidth,0.2)**2, sld=Math.max(P.slipDecay,0.5);
   for(const o of birds){ const h=Math.hypot(o.vel.x,o.vel.z)||1; o._hx=o.vel.x/h; o._hz=o.vel.z/h; }
   const off=0.5*P.span;                         // sample point at the middle of each half-wing
-  const uS=[0,0,0], dS=[0,0,0];
+  const uS=[0,0,0,0,0], dS=[0,0,0];   // uS: -side, body, +side, body+0.3 m, body-0.3 m
   for(const st of birds){
     if(!st.wakeWind) st.wakeWind=V3();
     st.wakeWind.set(0,0,0); st.tel.upwash=0; st.draftFactor=0; st.tel.draft=0;
-    st.upL=st.upR=st.dfL=st.dfR=0;
+    st.upL=st.upR=st.upU=st.upD=st.dfL=st.dfR=0;
     if(!P.draft) continue;
     const nx=-st._hz, nz=st._hx;
     uS.fill(0); dS.fill(0); let fdx=0, fdz=0;
     for(const other of birds){
       if(other===st) continue;
-      const dy=st.pos.y - other.pos.y;
-      for(let s=0;s<3;s++){                     // 0 = my -side half-wing, 1 = body, 2 = my +side half-wing
-        const lo=(s-1)*off;
+      for(let s=0;s<5;s++){                     // 0 = my -side half-wing, 1 = body, 2 = my +side half-wing,
+        const lo=s<3 ? (s-1)*off : 0;           // 3/4 = just above / below my body (to feel which height is better)
+        const dy=st.pos.y + (s===3 ? 0.3 : s===4 ? -0.3 : 0) - other.pos.y;
         const ddx=st.pos.x+nx*lo - other.pos.x, ddz=st.pos.z+nz*lo - other.pos.z;
         const back=-(ddx*other._hx + ddz*other._hz);          // >0 : this point is behind 'other'
         if(back<=0.05 || back>P.wakeRange) continue;
         const lz=-ddx*other._hz + ddz*other._hx;             // sideways offset in other's frame
         const decay=Math.exp(-back/Math.max(P.wakeDecay,1));
-        const dyI=st.pos.y + other.pos.y;                   // to the vortex's mirror image below the sea surface
+        const sink=wSink*back/Vref;                          // how far the vortex pair has dropped by here
+        const dyV=dy + sink;                                 // to the (sunken) vortex
+        const dyI=dy + 2*other.pos.y - sink;                 // to its mirror image below the sea surface
         for(const sg of [+1,-1]){                            // the two wingtips of 'other'
           const dz=lz - sg*tipZ;
-          uS[s] += sg*k*dz/(dz*dz + dy*dy + rc*rc)*decay;    // outboard of a tip = upwash
+          uS[s] += sg*k*dz/(dz*dz + dyV*dyV + rc*rc)*decay;  // outboard of a tip = upwash
           // GROUND EFFECT ON THE WAKE: near the water each tip vortex has an opposite-signed image vortex,
           // which cancels much of the upwash beside it. Skimming low, there's little V niche left to find.
           if(P.groundEffect) uS[s] -= sg*k*dz/(dz*dz + dyI*dyI + rc*rc)*decay;
         }
+        if(s>2) continue;
         const wake=Math.exp(-(lz*lz + dy*dy)/sw2)*Math.exp(-back/sld);
         if(wake>dS[s]){ dS[s]=wake; if(s===1){ fdx=other._hx; fdz=other._hz; } }   // ride the deepest one
       }
@@ -1398,6 +1411,8 @@ function computeWakes(){
     st.wakeWind.y = clamp(P.draftStrength*(uS[0]+uS[1]+uS[2])/3, -0.4, 3.5);
     st.upL = clamp(P.draftStrength*uS[0], -3, 3.5);
     st.upR = clamp(P.draftStrength*uS[2], -3, 3.5);
+    st.upU = clamp(P.draftStrength*uS[3], -3, 3.5);
+    st.upD = clamp(P.draftStrength*uS[4], -3, 3.5);
     st.tel.upwash = st.wakeWind.y;
     const df=clamp(dS[1],0,1); st.draftFactor=df; st.tel.draft=df;
     st.dfL=dS[0]; st.dfR=dS[2];
@@ -1499,6 +1514,7 @@ const SCHEMA=[
    {k:'nBirds',label:'Number of birds',min:1,max:15,step:1,unit:'',hint:'rebuilds the flock in its starting arrangement'},
    {k:'slotDx',label:'Start spacing — along',min:1,max:5,step:0.1,unit:'m',hint:'only lays out the starting flock; after that each bird finds its own place'},
    {k:'slotDz',label:'Start spacing — across',min:0.6,max:4,step:0.1,unit:'m',hint:'only lays out the starting flock'},
+   {k:'altFreedom',label:'Height freedom',min:0,max:3,step:0.1,unit:'m',hint:'how far above or below the flock a follower may settle, seeking the height with the most upwash. 0 = everyone flies level'},
    {k:'clearView',label:'Keep a clear view',min:0,max:2,step:0.05,unit:'m/s',hint:'a bird with others ahead on BOTH sides drifts toward the open side and eases back. 0 = birds stay boxed in and the flock fills in as a diamond'},
    {k:'wakeSeek',label:'Wake seeking',min:0,max:2,step:0.05,unit:'×',hint:'how readily a bird slides toward the wing that feels more lift. 0 = it stays wherever it is'},
    {k:'draftStrength',label:'Draft upwash strength',min:0,max:4,step:0.1,unit:'×',hint:'lift bonus a bird gets in the wake ahead'},
@@ -1669,7 +1685,7 @@ function buildPresetSection(host){
   const tg=document.createElement('div'); tg.style.marginTop='10px';
   const toggles=[['vForces','Force vectors'],['vFlow','Airflow'],['vTrail','Wingtip wakes'],
                  ['vWind','Wind vectors (green=up, red=down)'],['draft','Drafting upwash'],['leadRotate','Fatigue-driven passing (emergent lead changes)'],
-                 ['skimEnable','Surface skims (ground-effect fishing)']];
+                 ['wakeSink','Wakes sink behind each bird'],['skimEnable','Surface skims (ground-effect fishing)']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!P[k];

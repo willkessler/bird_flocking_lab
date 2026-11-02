@@ -50,7 +50,7 @@ So the goal here is to build the flock up from honest single-bird physics:
 
 | Path | What |
 |---|---|
-| `index.html` | The current version of the lab (v14), which is where iteration happens |
+| `index.html` | The current version of the lab (v15), which is where iteration happens |
 | `versions/` | Every earlier build, kept for reference (see below) |
 | `docs/conversation-notes.md` | Notes from the design conversation that produced v1 through v12 |
 | `tools/flock-metrics/` | Headless harness that runs the flock physics and measures emergent structure |
@@ -63,9 +63,10 @@ There are two naming series, in chronological order:
 - `bird-sim.html`, `bird-sim_1` … `bird-sim_10` (Aug–Sep 2026): the single-bird lab. These cover the blade-element aero, the feathering fix, active stabilization, the articulated folding wing, and the torque-limited muscle model. `_4`, `_5`, and `_6` are identical snapshots.
 - `bird-sim-v2` … `bird-sim-v12` (Sep 2026): the multi-bird flock. These add the wake and drafting model, V formation, lead rotation, flap-and-glide station keeping, coastline following, surface skims, turbulence, and camera modes. In these versions the V is choreographed: fixed slots, fixed arms, and a timed round-robin lead swap.
 - `bird-sim-v13` (Nov 2026): the choreography is removed, and formation and leadership emerge from local rules. Larger flocks tend to fill in as diamonds.
-- `bird-sim-v14` (Nov 2026): adds the clear-view rule, so boxed-in birds work their way out to the arms and Vs form on their own. This is the same as the current `index.html`.
+- `bird-sim-v14` (Nov 2026): adds the clear-view rule, so boxed-in birds work their way out to the arms and Vs form on their own.
+- `bird-sim-v15` (Nov 2026): trailing vortices sink behind each bird, and followers may settle up to 1.5 m above or below the flock at whichever height feels more upwash. This is the same as the current `index.html`.
 
-## How the formation emerges (v13–v14)
+## How the formation emerges (v13–v15)
 
 ![Time-lapse: starting from a random cluster, the flock assembles itself into a lopsided V, with the lead (blue) changing hands as birds tire](media/emergent-v14.gif)
 
@@ -77,7 +78,7 @@ From v13 on, nothing is assigned. Each bird only knows what it can see (birds ah
 
 1. **Pace:** fly at my preferred speed, which drops as I tire.
 2. **Draft:** if a bird is ahead of me, follow the nearest one at my follow distance. If no bird is ahead, I'm leading: follow the coast at my own pace, easing off if the flock behind me falls away.
-3. **Seek air:** slide sideways toward whichever wing feels more rising air or less drag. This is the roll a bird feels when one wing is in upwash.
+3. **Seek air:** slide sideways toward whichever wing feels more rising air or less drag. This is the roll a bird feels when one wing is in upwash. Since v15, a follower also drifts up or down, within 1.5 m of the flock's height, toward whichever height feels more upwash.
 4. **Space:** don't overlap a bird alongside me.
 5. **Pass:** if the bird I'm drafting keeps flying slower than I want to go, pull out and go past it.
 6. **Clear view** (added in v14): if there are birds ahead of me on *both* sides, I'm boxed in, so drift toward the less crowded side and ease back a rank until one side opens up. This is the "visual" hypothesis for V formations: each bird keeps an unobstructed view forward on at least one side.
@@ -88,15 +89,15 @@ From v13 on, nothing is assigned. Each bird only knows what it can see (birds ah
 
 Results come from `tools/flock-metrics` over 300–400 simulated seconds per run. They vary from run to run because each run starts from a different random cluster.
 
-| | v12 (choreographed) | v13 (rules 1–5) | v14 (rules 1–6) |
-|---|---|---|---|
-| Shape, 12 birds | V 98–100% | **Diamond / filled 23–94%**, V 0–40% | V 49–97%, filled 1–27%, the rest mixed |
-| Shape, 8 birds | V 98–100% | V 23–65%, filled 5–46% | V 59–90%, filled 3–9% |
-| Interior birds (birds ahead on both sides), 12 birds | n/a | 9–28% | 5–9% |
-| Lead changes per 300 s | Every 16 s, on a timer | 2–18, decided by the birds | 2–15, decided by the birds |
-| Power: leading vs drafting (calm air) | 62 W vs 49 W | 67 W vs 48 W | 69 W vs 55 W |
+| | v12 (choreographed) | v13 (rules 1–5) | v14 (rules 1–6) | v15 (+ sinking wake, height freedom) |
+|---|---|---|---|---|
+| Shape, 12 birds | V 98–100% | **Diamond / filled 23–94%**, V 0–40% | V 49–97%, filled 1–27%, the rest mixed | V 72–94%, filled 6–12% |
+| Shape, 8 birds | V 98–100% | V 23–65%, filled 5–46% | V 59–90%, filled 3–9% | V 81–100%, filled 0–3% |
+| Interior birds (birds ahead on both sides), 12 birds | n/a | 9–28% | 5–9% | 3–5% |
+| Lead changes per 300 s | Every 16 s, on a timer | 2–18, decided by the birds | 2–15, decided by the birds | 3–10, decided by the birds |
+| Power: leading vs drafting (calm air) | 62 W vs 49 W | 67 W vs 48 W | 69 W vs 55 W | 68–70 W vs 47–51 W |
 
-Most of those V's are lopsided. Counting a V as lopsided when one arm is at least twice the other plus one, or 3+ birds longer, 8 birds fly lopsided 51–59% of the time and 12 birds 44–79%. Pure echelons (all followers on one side) also appear, and a crosswind pushes strongly toward both (see below).
+Most of those V's are lopsided. Counting a V as lopsided when one arm is at least twice the other plus one, or 3+ birds longer, v14 flew lopsided V's 51–59% of the time with 8 birds and 44–79% with 12. In v15 it varies more from run to run: 3–80% with 8 birds and 18–83% with 12. Pure echelons (all followers on one side) also appear, and a crosswind pushes strongly toward both (see below).
 
 Two ablations: with passing switched off, one bird holds the point for the whole run, and with air-seeking switched off, birds stop finding the upwash and the flock sprawls.
 
@@ -104,10 +105,19 @@ The first published v13 numbers overstated how often it flew Vs. The shape metri
 
 ### Findings worth knowing
 
-- **Crosswind makes lopsided V's and echelons on its own.** With a 3 m/s crosswind, 12 birds fly balanced V's only 3% of the time, lopsided ones 64%, and echelons 33%. No rule mentions the wind: it skews the wakes, and the birds seeking better air follow them.
+- **Crosswind makes lopsided V's and echelons on its own, but the flock copes badly with it.** With a 3 m/s crosswind, 12 birds fly balanced V's only 3–5% of the time, lopsided ones 64–69%, and echelons 26–33%. No rule mentions the wind: it skews the wakes, and the birds seeking better air follow them. However, from 1.5 m/s of crosswind up, drafting costs *more* than leading (65–77 W vs 32–46 W) and the flock can stretch out to 80–290 m. This is an open issue, present since v14, and its cause isn't diagnosed yet.
 - **Diamonds are a local optimum, not a good place to be.** Without the clear-view rule, a bird boxed in between two others sits in their combined downwash. It gets about 0.1 m/s of upwash, against about 0.5 m/s for a bird on an arm, and needs about 25% more flap power. Air-seeking alone can't get it out: feeling the air only tells it which way is *locally* better, and the better air is several ranks back at the end of an arm. A simple visual rule ("don't be boxed in") is enough to turn diamonds into Vs, and its strength (the *Keep a clear view* slider) sweeps the flock from diamond through mixed to V.
 - **Turbulence decides whether formation flight pays.** Above about 1.5 m/s of gusting, followers burn their drafting savings chasing the bird ahead through air that hits each bird differently. Drafting then costs *more* than leading, and fatigue no longer drives who leads. This matches field observations that formation benefits shrink in rough air. The default turbulence is 1.0 (v12 used 2.5).
-- **Single-file strings don't emerge yet, and the model says why.** Directly behind another bird is the *trough* of its wake: the downwash from its two wingtip vortices peaks on the centerline. Any sideways nudge is rewarded, so in-line flight is unstable and birds slide out into echelons or Vs. That's the textbook reason geese fly Vs rather than columns. Two candidate mechanisms for pelican lines didn't change the outcome at the sim's 2 m skim height: image-vortex cancellation near the water, and wave-slope updrafts along swell crests (tested and removed). The likely next steps are letting birds skim realistically low (under 1 m, where the image vortex wipes out the V niche) or a wake model in which vortices sink behind the bird.
+- **Single-file strings don't emerge yet, and the model now says exactly what they need.** Directly behind another bird is a stable but *narrow and poor* spot. A bird nudged a little sideways is pushed back into line, but the pocket is only about ±0.2 m wide, and it sits in deep downwash right next to a strong upwash niche. Ordinary wobble knocks a bird out of line and it slides into the niche, which is why flocks form echelons and V's, and why geese don't fly in columns. In 12-bird runs, strings of 3+ birds appear 0–2% of the time under every condition tried. The sinking wake and height freedom (v15) don't change this; if anything they make V's more stable. Wave-slope updrafts along swell crests were also tested and removed. What *does* change it is the water. Computing the wake field directly shows how the in-line pocket depends on altitude and spacing:
+
+  | Altitude | Spacing | In-line pocket | Downwash in line | Upwash in V niche |
+  |---|---|---|---|---|
+  | 20 m (cruise) | 2.5 m | ±0.19 m | −1.85 m/s | +0.98 m/s |
+  | 2 m (current skim) | 2.5 m | ±0.19 m | −1.73 m/s | +1.07 m/s |
+  | 0.5 m | 2.5 m | ±0.34 m | −0.75 m/s | +1.00 m/s |
+  | 0.5 m | 10 m | ±2 m (everywhere) | −0.01 m/s | +0.01 m/s |
+
+  Skimming at about half a meter with loose spacing, the wakes' mirror images below the surface cancel them almost completely. There's then no penalty for flying directly behind and nothing to gain by staggering, so birds following the bird ahead would stay in line. That matches brown pelicans flying long, loose single-file lines with their wingtips nearly touching the waves. The sim can't fly that low yet: a first attempt at a 0.8 m skim had birds touching the water, because full 35° wingbeats dip the wingtips into the sea and the altitude control near the surface isn't good enough. Making that low skim work (wings held level in ground effect, better near-surface control) is the next step toward strings.
 - **Some individuals stay tired.** Less-fit birds can sit near full fatigue even while drafting. That may be realistic, or it may mean the tail of an echelon doesn't pay enough.
 
 ## Running the metrics harness
