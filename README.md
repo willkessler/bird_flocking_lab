@@ -1,10 +1,18 @@
 # Bird Flocking Lab
 
-![A flock of eight simulated pelicans in V formation descending to skim the surf along a coastline](media/flock-v12.gif)
+<p align="center">
+  <a href="https://willkessler.github.io/bird_flocking_lab/"><img src="https://img.shields.io/badge/%E2%96%B6%20TRY%20IT%20OUT-Open%20the%20live%20lab-0fb5a8?style=for-the-badge" alt="Try it out: open the live lab" height="48"></a>
+</p>
+
+<h2 align="center"><a href="https://willkessler.github.io/bird_flocking_lab/">▶ TRY IT OUT: run the live lab in your browser</a></h2>
+
+<p align="center"><i>Nothing to install. It opens straight into a flying flock. Drag to orbit, press 1–9 to ride a bird.</i></p>
+
+[![A flock of eight simulated pelicans in V formation descending to skim the surf along a coastline. Click to open the live lab.](media/flock-v12.gif)](https://willkessler.github.io/bird_flocking_lab/)
 
 A browser-based physics lab for studying how **pelican flocks** fly: how individual birds generate thrust from flapping, how they save energy by drafting off one another, and how formations like the V form, hold together, and reorganize.
 
-The whole lab is a single self-contained HTML file built on [three.js](https://threejs.org/). Open `index.html` in a browser; nothing needs installing.
+The whole lab is a single self-contained HTML file built on [three.js](https://threejs.org/). [Run it live](https://willkessler.github.io/bird_flocking_lab/), or open `index.html` locally in any browser; nothing needs installing.
 
 ## Why this exists
 
