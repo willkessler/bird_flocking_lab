@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab</title>
+<title>Bird Flight Lab v16</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -89,7 +89,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v16</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -181,14 +181,15 @@ const P = {
   flapStrategy:'intermittent', paceSpeed:11, followDist:2.5, draftBand:3, coastBeta:10,
   // flock: wingtip wakes and drafting. No slots are assigned -- each bird picks whom to draft and
   // slides sideways toward whichever wing feels more lift, so the formation's SHAPE is emergent.
-  nBirds:8, startFormation:'cluster', slotDx:2.2, slotDz:3.4, draft:1, draftStrength:5.0, wakeRange:30, wakeDecay:22, wakeCore:0.35,
+  nBirds:20, startFormation:'cluster', slotDx:2.2, slotDz:3.4, draft:1, draftStrength:5.0, wakeRange:30, wakeDecay:22, wakeCore:0.35,
   // reduced-drag slipstream ("rubber band"): a bird sitting in the wake ahead flies in co-moving
   // air, so its drag drops and a leader's surge is transmitted down the line as a wave.
   draftPull:4.2, slipWidth:2.2, slipDecay:7,
   wakeSeek:0.6,                // how readily a bird slides toward the better air it feels across its wings
   slack:0.8,                   // how loosely a follower keeps its spacing before it flaps to correct
-  clearView:0.8,
-  wakeSink:1, altFreedom:1.5,  // trailing vortices sink behind a bird; each follower may sit up to altFreedom m above/below the flock               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
+  pursuit:0.15,                // sideways pull toward the line of the bird I follow (strings, when the wake fades)
+  clearView:0.8,               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
+  wakeSink:1, altFreedom:1.5,  // trailing vortices sink behind a bird; each follower may sit up to altFreedom m above/below the flock
   // emergent leadership: muscle fatigue + individual variation + "pass a bird that's too slow for me"
   leadRotate:1, sustainPower:55, fatigueTime:40, fatigueSlow:0.25, passMargin:0.6, individuality:0.12, showWakes:1,
   // muscle (dynamic mode)
@@ -199,7 +200,7 @@ const P = {
   // viz: wind vector field
   vWind:1,
   // shoreline & surface skimming (ground-effect hydroplaning led by the lead bird)
-  skimEnable:1, skimAlt:2.0, skimPeriod:30, skimDuration:8,
+  skimEnable:1, skimAlt:2.0, tipClear:0.2, skimPeriod:30, skimDuration:8,
   // launch
   launchSpeed:13, launchAngle:0, startAlt:20,
   // sim
@@ -742,7 +743,8 @@ function windAt(pos){
     const gx = Math.sin(x + 0.7*t) + 0.6*Math.sin(0.5*z - 1.13*t + 1.7);
     const gy = 0.8*Math.sin(0.8*x - 0.9*t + 2.1) + 0.7*Math.sin(0.6*z + 0.53*t) + 0.4*Math.sin(0.9*y+0.4*t);
     const gz = Math.sin(0.7*z + 0.83*t) + 0.6*Math.sin(0.45*x + 1.27*t + 0.6);
-    w.x += s*gx; w.y += s*0.8*gy; w.z += s*gz;
+    // vertical gusts can't pass through the water: they fade out over the last metre or two
+    w.x += s*gx; w.y += s*0.8*gy*(1 - Math.exp(-Math.max(pos.y,0)/1.5)); w.z += s*gz;
   }
   return w;
 }
@@ -807,7 +809,7 @@ function computeForces(st){
   const relAir=V3().subVectors(wind, st.vel).applyQuaternion(inv);
 
   const netFbody=V3(), torqueBody=V3();
-  let Qaero=0, Qgrav=0;
+  let Qaero=0, Qgrav=0, lowY=1e9;
   let sumLiftUp=0, sumFwd=0, sumDrag=0, aoaAcc=0, aoaN=0, stalled=0;
 
   const dih=P.dihedral*DEG;
@@ -856,8 +858,9 @@ function computeForces(st){
     let [CL,CD,w]=aeroCoeffs(alpha);
     if(w>0.55) stalled++;
     let geMul=1;
+    const worldY=st.pos.y + p.clone().applyQuaternion(st.quat).y;
+    if(worldY<lowY) lowY=worldY;                     // lowest wing point -> tip clearance over the water
     if(P.groundEffect){
-      const worldY=st.pos.y + p.clone().applyQuaternion(st.quat).y;
       const h=Math.max(0.05,worldY);
       const ge=Math.exp(-h/(3*P.span));              // reaches ~a wingspan-and-a-half up
       geMul=1+P.geStrength*0.22*ge;                   // modest extra lift (kept small so it doesn't bounce the bird out of GE)
@@ -981,16 +984,22 @@ function computeForces(st){
     // tiny so the trim is a whisper. The headroom is what lets the flock actually DESCEND to skim:
     // a coasting glide speeds up and its lift climbs past W, so a weak cap couldn't overcome the
     // excess lift and the dive stalled out halfway down. This lets the lead's dip reach the surface.
-    const W=P.mass*G, capY=1.0*W;
-    const fy = P.mass*(1.8*(st.targetAlt - st.pos.y) - 2.6*st.vel.y);
+    // Within a metre or so of the water a skimming bird holds its height far more tightly (it is
+    // watching the surface, and ground effect itself stiffens the height), so the trim firms up there.
+    const W=P.mass*G, capY=1.0*W, low=1 + 2*clamp(1.5 - st.targetAlt, 0, 1);
+    // + st.altTrim: the slowly learned steady lift correction (see flockControl), so a glide whose wings
+    // lift a bit less than the weight doesn't have to sag below its height to be held up
+    const fy = P.mass*(1.8*low*(st.targetAlt - st.pos.y) + 2.6*Math.sqrt(low)*((st.targetVy||0) - st.vel.y) + (st.altTrim||0));
     netWorld.y += clamp(fy, -capY, capY);
   }
-  // HARD WATER CUSHION (safety, uncapped): below ~1.2 m an escalating upward push plus a strong
+  // HARD WATER CUSHION (safety, uncapped): below ~1.6 m an escalating upward push plus a strong
   // arrest of any downward speed keeps a downgust -- or an over-eager dip -- from actually ditching
   // a bird into the sea during a surface skim. It's silent above 1.2 m, so it never touches cruise.
-  if(st.pos.y < 1.6){
-    const d = 1.6 - st.pos.y;
-    netWorld.y += P.mass*(12.5*d + (st.vel.y<0 ? -5.0*st.vel.y : 0));
+  // The cushion starts lower when the bird is deliberately skimming lower (80% of its target height).
+  const cushTop = Math.min(1.6, 0.8*(st.targetAlt==null ? 2 : st.targetAlt));
+  if(st.pos.y < cushTop){
+    const d = cushTop - st.pos.y;
+    netWorld.y += P.mass*((20/cushTop)*d + (st.vel.y<0 ? -5.0*st.vel.y : 0));
   }
 
   if(st.vzCmd!=null){
@@ -1022,7 +1031,7 @@ function computeForces(st){
     const altErr=(st.targetAlt||st.pos.y)-st.pos.y;
     // Stiff, over-damped pitch loop with strong vertical-rate damping: holds a firm altitude
     // trim and actively arrests a sink, so the slow flap-coast phugoid can't build into a dive.
-    const trimEff=clamp(P.trimPitch + 1.6*altErr - 2.6*st.vel.y, -10, 22);
+    const trimEff=clamp(P.trimPitch + 1.6*altErr + 2.6*((st.targetVy||0) - st.vel.y), -10, 22);
     const pitchErr=fwd.y - Math.sin(trimEff*DEG);       // nose elevation vs (altitude-holding) trim
     // Physics roll is held WINGS-LEVEL (the strongest, most stable choice). Lateral station is
     // done by the dedicated damped side-force above, not by banking -- letting the roll loop bank
@@ -1063,6 +1072,7 @@ function computeForces(st){
   T.dragScalar = sumDrag + spd*0.5*P.rho*P.bodyCd*derived.bodyA*spd + tipBrake;
   T.aoa = aoaN? (aoaAcc/aoaN) : 0;
   T.stalled = stalled;
+  T.lowY = lowY;                                      // lowest wing point this step (m above water)
   T.aeroWorld = aeroWorld;
   T.flightDir = flightDir;
   T.Fg = Fg;
@@ -1274,6 +1284,10 @@ function flockControl(st, dt){
     // tether: slid clean out of the bird's wake (nothing left to feel)? drift back toward it
     const c=rel(tgt)[1], reach=2.2*sp+1.0;
     if(Math.abs(c)>reach) vlat += 0.4*(Math.abs(c)-reach)*Math.sign(c);
+    // follow: a gentle pull toward the line of the bird I'm following (I keep it in view dead ahead).
+    // Far weaker than the pull of the wake's upwash, so where there's a wake to ride it barely shows --
+    // but where the wake fades (skimming low over the water) it's the only thing left steering me.
+    vlat += P.pursuit*clamp(c, -2, 2);
     st.side = c<0 ? +1 : -1;                                  // which side of the bird ahead I'm on
   } else st.side=0;
   for(const b of birds){                                      // don't overlap a bird alongside
@@ -1315,9 +1329,18 @@ function flockControl(st, dt){
   // and relaxing slowly back toward the flock's height. altFreedom = 0 keeps everyone level.
   if(tgt && P.altFreedom>0 && P.draft){
     st.altOff = (st.altOff||0) + dt*(P.wakeSeek*1.5*(st.upU - st.upD) - 0.05*(st.altOff||0));
-    st.altOff = clamp(st.altOff, skimState==='cruise' ? -P.altFreedom : -0.2, P.altFreedom);
+    // skimming, the freedom shrinks with height: right over the water, ground effect makes staying low pay
+    const fr = skimState==='cruise' ? P.altFreedom : Math.min(P.altFreedom, 0.3*flockBaseAlt);
+    st.altOff = clamp(st.altOff, skimState==='cruise' ? -fr : -0.1*flockBaseAlt, fr);
   } else st.altOff = (st.altOff||0)*(1 - Math.min(1, dt/2));
-  st.targetAlt = flockBaseAlt + st.altOff;
+  const newAlt = flockBaseAlt + st.altOff;
+  // how fast the target height is moving (the dive / climb), so height-holding damps relative to it
+  st.targetVy = (st.targetAlt==null || dt<=0) ? 0 : 0.9*(st.targetVy||0) + 0.1*(newAlt - st.targetAlt)/dt;
+  st.targetAlt = newAlt;
+  // Learn the steady lift correction only while close to the target height: during a dive or climb the
+  // error is large and would wind it up, then drive the bird into the water when the dive levels out.
+  const hErr = newAlt - st.pos.y;
+  st.altTrim = clamp((st.altTrim||0) + dt*(Math.abs(hErr) < 0.4 ? 1.2*hErr : -0.2*(st.altTrim||0)), -2.5, 2.5);
 
   if(P.flapStrategy==='intermittent'){
     const line=st.targetAlt||P.startAlt;
@@ -1328,7 +1351,7 @@ function flockControl(st, dt){
     // very energy drafting saves); whoever is leading just tracks its own pace
     const deadband = lead ? 0.25 : P.slack;
     const slow     = st.aspS < 0.78*P.paceSpeed;              // stall safety (airspeed)
-    const floor    = clamp(line*0.5, 0.7, 2.5);
+    const floor    = clamp(line*0.5, 0.25, 2.5);
     const absFloor = st.pos.y < floor;
     const speedCap = lead ? 1.15*st.vPref : Math.max(1.25*P.paceSpeed, aheadV + 1.5);
     const tooFast  = st.gsS > speedCap;
@@ -1344,6 +1367,15 @@ function flockControl(st, dt){
   }
   // tired muscles can't drive a full beat (muscle mode gets this through muscleCapacity instead)
   if(P.mode==='prescribed' && st.flapping) st.ampScale = Math.min(st.ampScale, 1 - 0.4*st.fatigue);
+  // Keep the wingtips out of the water: near the surface the downstroke can only reach so far before
+  // the tip touches, so the beat gets shallower the lower the bird flies (pelicans skimming the waves
+  // glide with level wings and give only short, shallow beats).
+  if(st.flapping){
+    const h = Math.min(st.pos.y, st.targetAlt==null ? st.pos.y : st.targetAlt);   // don't count on height I'm about to lose
+    const reach = Math.asin(clamp((h - P.tipClear)/P.span, -1, 1)) + P.dihedral*DEG;
+    st.tipCap = clamp(reach/Math.max(P.flapAmp*DEG, 1e-3), 0.12, 1);
+    st.ampScale = Math.min(st.ampScale, st.tipCap);
+  }
   st.flapDuty=0.996*(st.flapDuty==null?1:st.flapDuty)+0.004*(st.flapping?1:0);
   st.cmdRoll = 0;
 }
@@ -1437,7 +1469,8 @@ function updateSkim(dt){
       skimFreezeX = birds.length?birds[order[0]].pos.x:0;
       skimFreezeHdg = Math.atan(coastFollowSlope(skimFreezeX)); }
   } else if(skimState==='descend'){
-    flockBaseAlt = Math.max(P.skimAlt, flockBaseAlt - rate*dt);
+    // glide down at ~2 m/s, then flatten out over the last few metres instead of stopping abruptly
+    flockBaseAlt = Math.max(P.skimAlt, flockBaseAlt - Math.min(rate, 0.2 + 0.6*(flockBaseAlt - P.skimAlt))*dt);
     if(flockBaseAlt <= P.skimAlt+0.05){ skimState='skim'; skimHold=P.skimDuration; }
   } else if(skimState==='skim'){
     flockBaseAlt += (P.skimAlt-flockBaseAlt)*Math.min(1,dt*1.5);
@@ -1511,11 +1544,12 @@ function stepBody(st, f, dt){
 const SCHEMA=[
  {title:'Presets & mode', open:true, custom:'presets'},
  {title:'Flock & drafting', open:true, items:[
-   {k:'nBirds',label:'Number of birds',min:1,max:15,step:1,unit:'',hint:'rebuilds the flock in its starting arrangement'},
+   {k:'nBirds',label:'Number of birds',min:1,max:30,step:1,unit:'',hint:'rebuilds the flock in its starting arrangement'},
    {k:'slotDx',label:'Start spacing — along',min:1,max:5,step:0.1,unit:'m',hint:'only lays out the starting flock; after that each bird finds its own place'},
    {k:'slotDz',label:'Start spacing — across',min:0.6,max:4,step:0.1,unit:'m',hint:'only lays out the starting flock'},
    {k:'altFreedom',label:'Height freedom',min:0,max:3,step:0.1,unit:'m',hint:'how far above or below the flock a follower may settle, seeking the height with the most upwash. 0 = everyone flies level'},
    {k:'clearView',label:'Keep a clear view',min:0,max:2,step:0.05,unit:'m/s',hint:'a bird with others ahead on BOTH sides drifts toward the open side and eases back. 0 = birds stay boxed in and the flock fills in as a diamond'},
+   {k:'pursuit',label:'Follow the bird ahead',min:0,max:0.6,step:0.05,unit:'/s',hint:'a gentle sideways pull toward the line of the bird I follow. Weak next to the wake, so V\'s and echelons still win up high; skimming low with loose spacing (the water cancels the wake) it lines birds up into strings. 0 = v15 behaviour'},
    {k:'wakeSeek',label:'Wake seeking',min:0,max:2,step:0.05,unit:'×',hint:'how readily a bird slides toward the wing that feels more lift. 0 = it stays wherever it is'},
    {k:'draftStrength',label:'Draft upwash strength',min:0,max:4,step:0.1,unit:'×',hint:'lift bonus a bird gets in the wake ahead'},
    {k:'draftPull',label:'Slipstream pull',min:0,max:8,step:0.1,unit:'m/s',hint:'co-moving air in the wake — reduces a follower’s drag and couples the line (the "rubber band")'},
@@ -1566,9 +1600,10 @@ const SCHEMA=[
    {k:'coastBeta',label:'Coast wing angle',min:-10,max:20,step:1,unit:'°',hint:'dihedral the wing holds while gliding'},
  ]},
  {title:'Shoreline & surface skims', open:false, items:[
-   {k:'skimAlt',label:'Skim altitude',min:1.0,max:6,step:0.1,unit:'m',hint:'how low the flock drops to hydroplane in ground effect'},
+   {k:'skimAlt',label:'Skim altitude',min:0.4,max:6,step:0.1,unit:'m',hint:'how low the flock drops to hydroplane in ground effect. Try 0.5 m with a looser follow distance to see strings form'},
    {k:'skimPeriod',label:'Time between skims',min:8,max:90,step:1,unit:'s',hint:'average cruise time before the lead dips to the surface'},
    {k:'skimDuration',label:'Skim duration',min:2,max:20,step:1,unit:'s',hint:'how long the flock rides just over the water'},
+   {k:'tipClear',label:'Wingtip clearance',min:0.05,max:0.5,step:0.05,unit:'m',hint:'near the surface the wingbeat gets shallower so the downstroke stops this far above the water'},
  ]},
  {title:'Muscle model (dynamic mode)', open:false, items:[
    {k:'muscleStrength',label:'Muscle strength',min:0.2,max:3,step:0.05,unit:'×',hint:'too low and the muscles saturate — the wingbeat falls short and it sinks'},
@@ -1617,7 +1652,7 @@ function buildUI(){
     secHost.appendChild(d);
   }
 }
-function fmt(v){ return Math.abs(v)>=100? v.toFixed(0) : Math.abs(v)>=10? v.toFixed(1): v.toFixed(3).replace(/0+$/,'').replace(/\.$/,''); }
+function fmt(v){ return Math.abs(v)>=100 || (Math.abs(v)>=10 && Number.isInteger(v))? v.toFixed(0) : Math.abs(v)>=10? v.toFixed(1): v.toFixed(3).replace(/0+$/,'').replace(/\.$/,''); }
 function mkCtl(it){
   const div=document.createElement('div'); div.className='ctl';
   const lab=document.createElement('label');

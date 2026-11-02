@@ -1,0 +1,8 @@
+[
+  {"name": "no skims, pursuit 0.15", "secs": 240, "P": {"nBirds":12, "skimEnable":0}},
+  {"name": "no skims, pursuit 0.3", "secs": 240, "P": {"nBirds":12, "skimEnable":0, "pursuit":0.3}},
+  {"name": "skim 0.5, follow 2.5, pursuit 0.15", "secs": 240, "P": {"nBirds":12, "skimPeriod":12, "skimDuration":20, "skimAlt":0.5}},
+  {"name": "skim 0.5, follow 8, pursuit 0.15", "secs": 240, "P": {"nBirds":12, "skimPeriod":12, "skimDuration":20, "skimAlt":0.5, "followDist":8}},
+  {"name": "skim 0.5, follow 8, pursuit 0.3", "secs": 240, "P": {"nBirds":12, "skimPeriod":12, "skimDuration":20, "skimAlt":0.5, "followDist":8, "pursuit":0.3}},
+  {"name": "skim 2.0, follow 8, pursuit 0.3 (control)", "secs": 240, "P": {"nBirds":12, "skimPeriod":12, "skimDuration":20, "skimAlt":2.0, "followDist":8, "pursuit":0.3}}
+]

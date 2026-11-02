@@ -1,0 +1,2183 @@
+<meta charset="utf-8">
+<title>Bird Flight Lab v16</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821e6; --panel2:#0e131a; --line:#223042;
+    --ink:#dfe8f2; --dim:#8ea0b5; --accent:#4bd6c9; --accent2:#ffb454;
+    --good:#5ad19a; --bad:#ff6b6b; --warn:#ffd166; --lift:#4bd6c9; --thrust:#ffb454; --drag:#ff6b6b; --weight:#9aa7ff;
+    --ui:'Archivo',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 var(--ui);overflow:hidden}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  #scene{position:absolute;inset:0}
+  /* Panels */
+  .panel{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(8px);box-shadow:0 10px 40px #0008}
+  #controls{top:12px;left:12px;width:326px;max-height:calc(100% - 24px);overflow-y:auto;padding:0}
+  #controls::-webkit-scrollbar{width:9px}
+  #controls::-webkit-scrollbar-thumb{background:#2a3a4f;border-radius:8px}
+  #controls h1{cursor:pointer}
+  #controls.collapsed{width:auto}
+  #controls.collapsed #secHost{display:none}
+  #controls.collapsed h1{border-bottom:none}
+  h1 .chev{color:var(--accent);font-size:11px;margin-left:10px;transition:transform .15s;transform:rotate(0deg)}
+  #controls.collapsed h1 .chev{transform:rotate(-90deg)}
+  #hud{top:12px;right:12px;width:270px;padding:12px 14px}
+  #charts{right:12px;bottom:12px;width:270px;padding:10px 12px}
+  #toolbar{bottom:12px;left:12px;padding:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 320px)}
+  h1{font-size:14px;margin:0;padding:13px 14px 11px;letter-spacing:.3px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+  h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  h1 small{color:var(--dim);font-weight:400;font-size:11px;margin-left:auto}
+  details{border-bottom:1px solid var(--line)}
+  details[open] > summary{color:var(--ink)}
+  summary{cursor:pointer;list-style:none;padding:9px 14px;font-weight:600;color:var(--dim);user-select:none;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.6px;font-size:11px}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸";color:var(--accent);font-size:10px;transition:transform .15s}
+  details[open] > summary::before{transform:rotate(90deg)}
+  .sec{padding:4px 14px 12px}
+  .ctl{margin:9px 0}
+  .ctl label{display:flex;justify-content:space-between;color:var(--dim);margin-bottom:3px;font-size:11.5px}
+  .ctl label b{color:var(--ink);font-weight:500;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:#243244;border-radius:3px;outline:none;margin:2px 0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 0 3px #4bd6c933}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border:none;border-radius:50%;background:var(--accent);cursor:pointer}
+  select{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit}
+  .row{display:flex;gap:8px}
+  .row > *{flex:1}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{flex:1;text-align:center;padding:7px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--dim);cursor:pointer;font-weight:600;font-size:11.5px;transition:.12s}
+  .chip:hover{border-color:var(--accent);color:var(--ink)}
+  .chip.on{background:linear-gradient(180deg,#183a3a,#12232a);border-color:var(--accent);color:var(--accent)}
+  .btn{padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);cursor:pointer;font-weight:600;font-size:12px;transition:.12s}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:linear-gradient(180deg,#1c4b47,#123230);border-color:var(--accent);color:var(--accent)}
+  .toggle{display:flex;align-items:center;gap:7px;color:var(--dim);cursor:pointer;font-size:11.5px;padding:3px 0}
+  .toggle input{accent-color:var(--accent)}
+  /* HUD */
+  .hud-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;margin-top:4px}
+  .stat{display:flex;flex-direction:column}
+  .stat .k{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+  .stat .v{font-size:18px;font-weight:600;font-family:var(--mono);font-variant-numeric:tabular-nums;line-height:1.15}
+  .stat .u{color:var(--dim);font-size:10px;font-weight:400}
+  .bars{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+  .bar{display:flex;align-items:center;gap:8px;font-size:11px}
+  .bar .lab{width:52px;color:var(--dim)}
+  .bar .track{flex:1;height:8px;background:#1a2432;border-radius:5px;overflow:hidden;position:relative}
+  .bar .fill{position:absolute;top:0;bottom:0;left:50%;border-radius:5px}
+  .bar .val{width:56px;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .hint{color:var(--dim);font-size:10.5px;margin-top:9px;line-height:1.35}
+  .badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;margin-left:6px}
+  .badge.ok{background:#123a2c;color:var(--good)}
+  .badge.stall{background:#3a1212;color:var(--bad)}
+  .badge.flap{background:#1c3a38;color:var(--accent)}
+  .badge.coast{background:#20293f;color:#9aa7ff}
+  #chartCanvas{width:100%;height:150px;display:block}
+  .clab{display:flex;gap:12px;font-size:10px;color:var(--dim);margin-top:4px;flex-wrap:wrap}
+  .clab i{width:9px;height:3px;display:inline-block;border-radius:2px;margin-right:4px;vertical-align:middle}
+  .tag{position:absolute;left:50%;transform:translateX(-50%);top:10px;color:var(--dim);font-size:10.5px;background:#0b0f14cc;padding:4px 12px;border-radius:16px;border:1px solid var(--line);max-width:52%;text-align:center;z-index:3}
+  .flash{color:var(--warn)}
+  a{color:var(--accent)}
+</style>
+
+<div id="app">
+  <div id="scene"></div>
+
+  <div class="panel" id="controls">
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v16</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <!-- sections injected here -->
+    <div id="secHost"></div>
+  </div>
+
+  <div class="panel" id="hud">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="font-weight:700">Flight state <span id="modeBadge" class="badge">FLAP</span><span id="stallBadge" class="badge ok">OK</span></div>
+    </div>
+    <div class="hud-grid" id="statGrid"></div>
+    <div class="bars" id="forceBars"></div>
+    <div class="hint" id="hudHint"></div>
+  </div>
+
+  <div class="panel" id="charts">
+    <div style="font-weight:700;margin-bottom:4px">Forces over time</div>
+    <canvas id="chartCanvas"></canvas>
+    <div class="clab">
+      <span><i style="background:var(--lift)"></i>Lift</span>
+      <span><i style="background:var(--thrust)"></i>Net thrust</span>
+      <span><i style="background:var(--weight)"></i>Weight</span>
+      <span><i style="background:#7fd1ff"></i>Altitude</span>
+    </div>
+  </div>
+
+  <div class="panel" id="toolbar">
+    <button class="btn primary" id="btnPlay">⏸ Pause</button>
+    <button class="btn" id="btnReset">↺ Restart flight</button>
+    <button class="btn" id="btnResetAll">⟲ Reset controls</button>
+    <button class="btn" id="btnFollow">🎥 Follow: on</button>
+    <span style="color:var(--dim);font-size:11px">drag to orbit · scroll to zoom · <b style="color:var(--ink)">1–9</b> ride a bird · <b style="color:var(--ink)">⇧1–9</b> over-shoulder · <b style="color:var(--ink)">0</b> orbit</span>
+  </div>
+
+  <div class="tag">Bird flies +X along the shore. <span id="skimTag"></span>Wind, mass, wings, muscles & stabilizers are all live — retune and watch the physics respond.</div>
+
+  <!-- bird's-eye view overlays -->
+  <div id="leadTint" style="position:fixed;inset:0;pointer-events:none;z-index:4;display:none;
+       box-shadow:inset 0 0 260px 50px rgba(70,150,255,0.30);
+       background:radial-gradient(ellipse at center, rgba(80,160,255,0) 42%, rgba(70,150,255,0.18) 100%)"></div>
+  <div id="povTag" style="position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:5;display:none;
+       pointer-events:none;background:#0b0f14dd;border:1px solid var(--line);border-radius:16px;
+       padding:6px 14px;font-size:12px;color:var(--ink);white-space:nowrap"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================================================================
+   BIRD FLIGHT LAB
+   A blade-element (strip-theory) flapping-flight simulator.
+
+   Core idea: each wing is divided into spanwise strips. Every strip computes
+   its own local relative airflow (bird motion + body rotation + flapping
+   velocity + wind), its angle of attack, and its lift & drag. Because the
+   downstroke plunges the wing DOWN, the local airflow arrives from below-and-
+   front, which tilts each strip's LIFT vector FORWARD -> that forward
+   component is THRUST. Thrust therefore EMERGES from the geometry of wing
+   motion; it is not scripted. Feathering (wing twist per stroke phase) breaks
+   the up/down symmetry so the cycle nets positive thrust. Set feathering to 0
+   and thrust collapses -- exactly the classic failure mode.
+   ============================================================================ */
+
+const DEG = Math.PI/180, RAD = 180/Math.PI, G = 9.81;
+const V3 = (x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const smooth=t=>t*t*(3-2*t);
+
+/* ------------------------------------------------------------------ PARAMS */
+const P = {
+  // mass & skeleton
+  mass:3.5, boneThickness:0.8, wingMassFrac:0.16, headMassFrac:0.12, tailMassFrac:0.095,
+  neckLen:0.49, tailLen:0.42,
+  // head/bill shape & neck posture (default = pelican): big head, long deep orange bill, neck folded
+  // back onto the shoulders in flight. neckFold 0 = extended heron neck, 1 = fully retracted.
+  headScale:1.3, beakScale:2.4, neckFold:0.85, beakHex:0xE8A63D,
+  // wing geometry (per wing)
+  span:1.10, rootChord:0.34, taper:0.5, sweep:6, dihedral:6,
+  innerFrac:0.42,          // fraction of half-span that is the inner (arm) segment
+  innerAoA:8, outerAoA:3,  // geometric angle of attack of inner vs outer (hand) wing
+  tipSpread:0.15,          // wingtip primary-feather splay (winglet at low values, airbrake high)
+  // stabilizers
+  tailArea:0.070, tailIncidence:-3, angDamp:1.0, stab:0.9, trimPitch:2,
+  // aero
+  rho:1.225, clAlpha:5.8, stallDeg:15, cd0:0.016, inducedK:0.035,
+  groundEffect:1, geStrength:1.3, bodyCd:0.38,
+  // flapping / kinematics
+  mode:'muscle', flapFreq:2.6, flapAmp:35, upDownAsym:0.18, featherAmp:8,
+  foldAmount:0.85, maxFoldDeg:95,   // wrist/elbow flex on the upstroke (0 = rigid wing)
+  // flap/coast strategy (intermittent flight)
+  flapStrategy:'intermittent', paceSpeed:11, followDist:2.5, draftBand:3, coastBeta:10,
+  // flock: wingtip wakes and drafting. No slots are assigned -- each bird picks whom to draft and
+  // slides sideways toward whichever wing feels more lift, so the formation's SHAPE is emergent.
+  nBirds:20, startFormation:'cluster', slotDx:2.2, slotDz:3.4, draft:1, draftStrength:5.0, wakeRange:30, wakeDecay:22, wakeCore:0.35,
+  // reduced-drag slipstream ("rubber band"): a bird sitting in the wake ahead flies in co-moving
+  // air, so its drag drops and a leader's surge is transmitted down the line as a wave.
+  draftPull:4.2, slipWidth:2.2, slipDecay:7,
+  wakeSeek:0.6,                // how readily a bird slides toward the better air it feels across its wings
+  slack:0.8,                   // how loosely a follower keeps its spacing before it flaps to correct
+  pursuit:0.15,                // sideways pull toward the line of the bird I follow (strings, when the wake fades)
+  clearView:0.8,               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
+  wakeSink:1, altFreedom:1.5,  // trailing vortices sink behind a bird; each follower may sit up to altFreedom m above/below the flock
+  // emergent leadership: muscle fatigue + individual variation + "pass a bird that's too slow for me"
+  leadRotate:1, sustainPower:55, fatigueTime:40, fatigueSlow:0.25, passMargin:0.6, individuality:0.12, showWakes:1,
+  // muscle (dynamic mode)
+  muscleStrength:1.8, momentArm:0.020, muscleOptBeta:-8, muscleWidth:60,
+  vmax:30, elevatorFrac:0.3,
+  // wind
+  headwind:1.5, crosswind:-0.5, updraft:0, turbulence:1.0,
+  // viz: wind vector field
+  vWind:1,
+  // shoreline & surface skimming (ground-effect hydroplaning led by the lead bird)
+  skimEnable:1, skimAlt:2.0, tipClear:0.2, skimPeriod:30, skimDuration:8,
+  // launch
+  launchSpeed:13, launchAngle:0, startAlt:20,
+  // sim
+  timeScale:1.0,
+  // viz toggles
+  vForces:0, vFlow:1, vTrail:0
+};
+
+/* ------------------------------------------------------------------ PRESETS */
+const PRESETS = {
+  Swallow:{ mass:0.020, span:0.16, rootChord:0.045, taper:0.45, sweep:16, dihedral:4,
+    innerFrac:0.38, innerAoA:9, outerAoA:4, foldAmount:0.8, maxFoldDeg:80,
+    flapFreq:8.5, flapAmp:48, featherAmp:14, tailArea:0.006, tailLen:0.11,
+    neckLen:0.06, launchSpeed:9, startAlt:12, paceSpeed:13, wingMassFrac:0.12, headMassFrac:0.10,
+    headScale:0.9, beakScale:0.7, neckFold:0.1, beakHex:0x2b2b2b },
+  Crow:{ mass:0.50, span:0.45, rootChord:0.13, taper:0.6, sweep:8, dihedral:5,
+    innerFrac:0.42, innerAoA:8, outerAoA:3, foldAmount:0.75, maxFoldDeg:75,
+    flapFreq:4.2, flapAmp:40, featherAmp:10, tailArea:0.024, tailLen:0.24,
+    neckLen:0.14, launchSpeed:11, startAlt:14, paceSpeed:14, wingMassFrac:0.15, headMassFrac:0.11,
+    headScale:1.0, beakScale:0.9, neckFold:0.15, beakHex:0x1e1e1e },
+  Albatross:{ mass:9.0, span:1.62, rootChord:0.24, taper:0.42, sweep:3, dihedral:3,
+    innerFrac:0.50, innerAoA:7, outerAoA:3, foldAmount:0.4, maxFoldDeg:55,
+    flapFreq:2.4, flapAmp:34, featherAmp:5, tailArea:0.055, tailLen:0.40,
+    neckLen:0.24, launchSpeed:17, startAlt:30, paceSpeed:19, wingMassFrac:0.14, headMassFrac:0.12,
+    headScale:1.1, beakScale:1.5, neckFold:0.25, beakHex:0xE9C27A },
+  Pelican:{ mass:3.5, span:1.10, rootChord:0.34, taper:0.5, sweep:6, dihedral:6,
+    innerFrac:0.42, innerAoA:8, outerAoA:3, foldAmount:0.85, maxFoldDeg:95,
+    flapFreq:2.6, flapAmp:35, featherAmp:8, tailArea:0.070, tailLen:0.42,
+    neckLen:0.35, launchSpeed:13, startAlt:25, paceSpeed:15, wingMassFrac:0.16, headMassFrac:0.12,
+    headScale:1.3, beakScale:2.4, neckFold:0.85, beakHex:0xE8A63D }
+};
+let currentPreset = 'Pelican';
+const DEFAULTS = JSON.parse(JSON.stringify(P));   // snapshot for "reset all controls"
+
+/* ------------------------------------------------------------------ SCENE */
+const host = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+host.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fc7e8);
+scene.fog = new THREE.Fog(0x9fc7e8, 90, 470);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.05, 2000);
+
+// lights
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x24405a, 0.95));
+const sun = new THREE.DirectionalLight(0xffffff, 1.05);
+sun.position.set(40,70,30); scene.add(sun);
+
+// coastline constants (shared by the ocean clip and the terrain)
+const COAST_Z=42, TERR_PERIOD=360, Z_NEAR=14, Z_FAR=260;
+
+// ----- ocean: a big plane displaced by a GPU wave field, keyed to WORLD x/z so it can recenter on
+// the flock every frame while the swell stays put (the motion cue when the flock drops to skim).
+// FLAT-SHADED: the normal is the per-facet geometric normal (screen-space derivative of world pos),
+// so the surface reads as faceted low-poly swell, not smooth plastic. It is CLIPPED at the coastline
+// so the sea never overlaps the sand (that overlap was the flicker).
+const waterGeo = new THREE.PlaneGeometry(1500,1500,150,150);
+const waterMat = new THREE.ShaderMaterial({
+  transparent:true,
+  extensions:{ derivatives:true },
+  uniforms:{ uTime:{value:0}, uSun:{value:new THREE.Vector3(40,70,30).normalize()}, uCoast:{value:COAST_Z} },
+  vertexShader:`
+    uniform float uTime; varying vec3 vW;
+    float wv(vec2 p){ float h=0.0;
+      h+=sin(p.x*0.19+uTime*1.05)*0.26; h+=sin(p.y*0.16-uTime*0.85)*0.22;
+      h+=sin((p.x*0.11+p.y*0.14)+uTime*1.5)*0.15; h+=sin((p.x*0.37-p.y*0.31)+uTime*2.2)*0.06;
+      return h; }
+    void main(){
+      vec4 wp=modelMatrix*vec4(position,1.0);
+      vec3 dp=position; dp.z+=wv(wp.xz);               // local +z -> world +y after the -90 x-rotation
+      vec4 wp2=modelMatrix*vec4(dp,1.0); vW=wp2.xyz;
+      gl_Position=projectionMatrix*viewMatrix*wp2;
+    }`,
+  fragmentShader:`
+    uniform vec3 uSun; uniform float uCoast; varying vec3 vW;
+    // wandering coastline — MUST match JS coastLine() so sea and land meet exactly (coves & points)
+    float cl(float x){ float K=0.0174532925;
+      return 10.0*sin(K*x+0.6)+4.0*sin(2.0*K*x+2.1)+2.5*sin(4.0*K*x+0.4)+1.5*sin(7.0*K*x+3.0); }
+    void main(){
+      if(vW.z > uCoast + cl(vW.x) + 1.0) discard;            // stop the sea at the wandering coastline
+      vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));          // FLAT per-facet normal
+      if(n.y<0.0) n=-n;
+      float dif=clamp(dot(n,uSun),0.0,1.0);
+      vec3 deep=vec3(0.06,0.26,0.40), shallow=vec3(0.16,0.48,0.60);
+      vec3 col=mix(deep,shallow, clamp(n.y*1.6-0.55,0.0,1.0));   // facets tilted off-vertical read lighter
+      col*=0.72+0.5*dif;
+      gl_FragColor=vec4(col,0.96);
+    }`
+});
+waterMat.depthWrite = false;   // so faceted wave crests never occlude the bird shadows drawn over the sea
+const water = new THREE.Mesh(waterGeo, waterMat);
+water.rotation.x = -Math.PI/2; water.position.y = 0; water.renderOrder=-2; scene.add(water);
+
+// ----- shoreline: a real noise HEIGHTFIELD (the approach from Will's threejs-world) instead of a
+// flat wall -- underwater slope -> beach -> foothills -> snow-capped peaks, flat-shaded and coloured
+// by elevation. The height field is PERIODIC in x (period TERR_PERIOD), so the group can snap by
+// whole periods as the flock flies and the coast is seamless & endless with no per-frame rebuild.
+const terrainGroup = new THREE.Group(); scene.add(terrainGroup);
+const _tk = 2*Math.PI/TERR_PERIOD;
+// The waterline is NOT straight: it wanders in z with coves (cut inland) and points/outcrops (jut
+// seaward). All terms are integer harmonics of _tk so the whole coast stays periodic (seamless tile).
+// This exact function is mirrored in the water shader's cl() so sea and land share one coastline.
+function coastLine(x){
+  return 10*Math.sin(_tk*x+0.6) + 4*Math.sin(2*_tk*x+2.1) + 2.5*Math.sin(4*_tk*x+0.4) + 1.5*Math.sin(7*_tk*x+3.0);
+}
+// the flock's z centre-line: it roughly parallels the coast (follows the two dominant cove/point
+// terms IN PHASE, scaled, so it always sits safely seaward of the shifting shore). coastFollowSlope
+// is its derivative dz/dx -> the tangent DIRECTION the lead should point/turn to, so the flock banks
+// along the shoreline instead of crabbing sideways toward it.
+const FOLLOW_F=0.8;
+function coastFollow(x){ return FOLLOW_F*(10*Math.sin(_tk*x+0.6) + 4*Math.sin(2*_tk*x+2.1)); }
+function coastFollowSlope(x){ return FOLLOW_F*(10*_tk*Math.cos(_tk*x+0.6) + 8*_tk*Math.cos(2*_tk*x+2.1)); }
+const wrapPi=(a)=>{ while(a>Math.PI)a-=2*Math.PI; while(a<-Math.PI)a+=2*Math.PI; return a; };
+function terrainH(x,z){
+  const inland = z - COAST_Z - coastLine(x);            // shore position shifts with x -> coves & points
+  const base = inland<0 ? inland*0.30 : (0.15*inland + 0.0018*inland*inland);   // cross-shore profile
+  const amp  = clamp((inland-10)/50, 0, 1) * 20;                                // smooth beach, jagged peaks
+  // every x term is an integer harmonic of _tk => exactly periodic in x (seamless tiling)
+  const n = Math.sin(_tk*x + z*0.04 + 0.3)*1.0
+          + Math.sin(2*_tk*x + z*0.02 + 1.7)*0.5
+          + Math.sin(3*_tk*x + 3.1)*0.33
+          + Math.sin(5*_tk*x + z*0.03 + 0.6)*0.2
+          + Math.sin(8*_tk*x + 2.2)*0.12
+          + Math.sin(13*_tk*x + 5.0)*0.07;
+  return base + amp*n*0.5;
+}
+const _tc=new THREE.Color();
+function terrainColor(h){
+  if(h<1.2)      _tc.setHex(0xcdbe97);   // sand
+  else if(h<9)   _tc.setHex(0x5f7f4c);   // grass
+  else if(h<26)  _tc.setHex(0x6a6459);   // rock
+  else if(h<48)  _tc.setHex(0x585550);   // dark rock
+  else           _tc.setHex(0xe9eef3);   // snow
+  return _tc;
+}
+function buildTerrain(){
+  while(terrainGroup.children.length){ const c=terrainGroup.children.pop(); c.geometry&&c.geometry.dispose(); }
+  const X0=-2*TERR_PERIOD, X1=2*TERR_PERIOD, dx=10, dz=6;
+  const P=[], C=[];
+  const vert=(x,z)=>{ const h=terrainH(x,z); P.push(x,h,z);
+    const c=terrainColor(h + (Math.random()*1.6-0.8)); C.push(c.r,c.g,c.b); };   // jitter the band edges
+  for(let x=X0;x<X1;x+=dx){
+    for(let z=Z_NEAR;z<Z_FAR;z+=dz){
+      vert(x,z); vert(x,z+dz); vert(x+dx,z+dz);      // two CCW tris per cell (normal up)
+      vert(x,z); vert(x+dx,z+dz); vert(x+dx,z);
+    }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+  g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
+  const m=new THREE.MeshStandardMaterial({vertexColors:true, flatShading:true, roughness:1.0, side:THREE.DoubleSide});
+  terrainGroup.add(new THREE.Mesh(g,m));
+  // jetties: a few weathered timber groynes reaching out from the shore into the surf. One per tile
+  // period (at a fixed local offset) so they repeat seamlessly with the terrain snap.
+  const jettyMat=new THREE.MeshStandardMaterial({color:0x4b4132, roughness:1.0});
+  for(let x=X0; x<X1; x+=TERR_PERIOD){
+    const xj=x+150, sh=COAST_Z+coastLine(xj), len=30;
+    const j=new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.3, len), jettyMat);
+    j.position.set(xj, 0.55, sh-len*0.5);   // runs from the waterline out to sea (toward -z)
+    terrainGroup.add(j);
+  }
+}
+buildTerrain();
+
+// sky dome (simple gradient via large sphere backface)
+const skyGeo = new THREE.SphereGeometry(1000,24,16);
+const skyMat = new THREE.ShaderMaterial({
+  side:THREE.BackSide,
+  uniforms:{top:{value:new THREE.Color(0x2b5a8c)}, bot:{value:new THREE.Color(0xbfe0f2)}},
+  vertexShader:`varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+  fragmentShader:`varying float h; uniform vec3 top; uniform vec3 bot; void main(){ float t=clamp(h*0.5+0.5,0.0,1.0); gl_FragColor=vec4(mix(bot,top,pow(t,0.8)),1.0);}`
+});
+const skyMesh = new THREE.Mesh(skyGeo, skyMat); scene.add(skyMesh);
+
+/* ------------------------------------------------------------------ BIRD MESH */
+let birds = [];              // the flock: each entry is a state object with a .mesh and .tel
+let focus = 0;               // index of the bird shown in the HUD and followed by the camera
+let order = [];              // DESCRIPTIVE front-to-back order (order[0] = frontmost bird), recomputed from positions
+let lastFront = -1;          // previous frontmost bird, to flash the lead marker when the point changes hands
+let describeT = 0;           // throttle for describeFlock()
+// surface-skim cycle (the lead's call): cruise -> descend -> skim(near water, ground effect) -> ascend
+let skimState='cruise', skimHold=0, skimCountdown=30, flockBaseAlt=20, skimFreezeX=0, skimFreezeHdg=0;
+const flockRoot = new THREE.Group(); scene.add(flockRoot);
+
+function tri(a,b,c){ return [a.x,a.y,a.z,b.x,b.y,b.z,c.x,c.y,c.z]; }
+
+// Build one wing segment spanning global span-fractions gf0..gf1. Local +z*sign starts
+// at 0 (so an outer segment can be attached at the elbow joint). Chord & sweep follow
+// the global planform so inner + outer read as one continuous wing when extended.
+function buildWingSeg(sign, gf0, gf1){
+  const n=5, verts=[];
+  const push=(p)=>verts.push(p.x,p.y,p.z);
+  for(let i=0;i<n;i++){
+    const a=i/n, b=(i+1)/n;
+    const gfa=lerp(gf0,gf1,a), gfb=lerp(gf0,gf1,b);
+    const la=(gfa-gf0)*P.span, lb=(gfb-gf0)*P.span;   // local span position from segment root
+    const ca=P.rootChord*(1-(1-P.taper)*gfa), cb=P.rootChord*(1-(1-P.taper)*gfb);
+    const swa=-Math.tan(P.sweep*DEG)*(gfa*P.span), swb=-Math.tan(P.sweep*DEG)*(gfb*P.span);
+    const LEa=V3(swa+ca*0.35,0,sign*la), TEa=V3(swa-ca*0.65,0,sign*la);
+    const LEb=V3(swb+cb*0.35,0,sign*lb), TEb=V3(swb-cb*0.65,0,sign*lb);
+    push(LEa);push(LEb);push(TEa); push(TEa);push(LEb);push(TEb);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+  g.computeVertexNormals();
+  return g;
+}
+
+// Build ONE bird's mesh (returns a refs object). `lead` tints the lead bird.
+function makeBirdMesh(lead){
+  const root = new THREE.Group();
+  const bodyLen = clamp(P.rootChord*2.2, 0.12, 0.9);
+  const bodyR = clamp(bodyLen*0.28, 0.03, 0.22);
+  const skin = new THREE.MeshStandardMaterial({color: lead?0x5cb6ff:0xe4dcc9, roughness:0.8});
+  const dark = new THREE.MeshStandardMaterial({color:0x6b5b47, roughness:0.85});
+  const wingMat = new THREE.MeshStandardMaterial({color:0xcfc3ad, roughness:0.7, side:THREE.DoubleSide, transparent:true, opacity:0.94});
+  const wingMat2 = wingMat.clone(); wingMat2.color = new THREE.Color(0xbdb096);
+
+  const hs=P.headScale||1, bs=P.beakScale||1, fold=clamp(P.neckFold||0,0,1);
+  // torso: plumper and a touch shorter when the neck is folded (pelican) -> reads as a bird, not a blimp
+  const torsoLen = bodyLen*(1 - 0.22*fold);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(1,16,12), skin);
+  torso.scale.set(torsoLen, bodyR*(1+0.28*fold), bodyR*0.92); root.add(torso);
+
+  // HEAD + FOLDED NECK. Pelicans fly with the neck drawn back, the head resting on the shoulders and
+  // the long deep bill projecting forward -- so at high neckFold the head sits just above the front of
+  // the body (not out on a heron neck), joined by a short kinked neck.
+  const head = new THREE.Group();
+  const headR = bodyR*0.55*hs;
+  const frontX = torsoLen*0.9;
+  const headX = frontX*0.72 + P.neckLen*(1-fold);        // retracted toward the shoulders when folded
+  const headY = bodyR*(0.55 + 0.85*fold);                // riding up on the shoulders when folded
+  // short kinked neck from the shoulders up to the head
+  const sX=torsoLen*0.5, sY=bodyR*0.5, ndx=headX-sX, ndy=headY-sY, nlen=Math.max(Math.hypot(ndx,ndy),0.02);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(headR*0.6, bodyR*0.74, nlen, 8), skin);
+  neck.position.set((sX+headX)/2, (sY+headY)/2, 0);
+  neck.rotation.z = Math.atan2(ndy,ndx) - Math.PI/2; head.add(neck);
+  // head
+  const hd = new THREE.Mesh(new THREE.SphereGeometry(headR,12,10), skin);
+  hd.position.set(headX, headY, 0); head.add(hd);
+  // long, deep bill (orange for a pelican), projecting forward and angled a touch down
+  const beakMat = new THREE.MeshStandardMaterial({color:(P.beakHex==null?0x6b5b47:P.beakHex), roughness:0.6});
+  const beakLen = P.neckLen*0.55*bs;
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(headR*0.48, beakLen, 10), beakMat);
+  beak.rotation.z = -Math.PI/2; beak.position.set(headX + headR*0.55 + beakLen*0.5, headY - headR*0.12, 0);
+  head.add(beak);
+  // gular pouch: a soft warm bulge slung under the base of the bill (pelican signature)
+  if(fold>0.4 || bs>1.6){
+    const pouch = new THREE.Mesh(new THREE.SphereGeometry(1,10,8), beakMat);
+    pouch.scale.set(beakLen*0.34, headR*0.44, headR*0.4);
+    pouch.position.set(headX + headR*0.5 + beakLen*0.26, headY - headR*0.52, 0);
+    head.add(pouch);
+  }
+  root.add(head);
+
+  const tg = new THREE.BufferGeometry();
+  const tl = P.tailLen*0.9, tw = Math.sqrt(P.tailArea)*1.1;
+  tg.setAttribute('position', new THREE.Float32BufferAttribute([-bodyLen*0.7,0,0, -bodyLen*0.7-tl,0,tw*0.5, -bodyLen*0.7-tl,0,-tw*0.5],3));
+  tg.computeVertexNormals();
+  const tail = new THREE.Mesh(tg, wingMat); root.add(tail);
+
+  const shoulderX = bodyLen*0.15, shoulderY = bodyR*0.55, shoulderZ = bodyR*0.7, L1 = P.span*P.innerFrac;
+  function mkWing(sign){
+    const shoulder=new THREE.Group(); shoulder.position.set(shoulderX, shoulderY, sign*shoulderZ);
+    const inner=new THREE.Group(); shoulder.add(inner);
+    inner.add(new THREE.Mesh(buildWingSeg(sign,0,P.innerFrac), wingMat));
+    const elbow=new THREE.Group(); elbow.position.set(0,0,sign*L1); shoulder.add(elbow);
+    const outer=new THREE.Group(); elbow.add(outer);
+    outer.add(new THREE.Mesh(buildWingSeg(sign,P.innerFrac,1), wingMat2));
+    const L2=P.span*(1-P.innerFrac), tipX=-Math.tan(P.sweep*DEG)*P.span;
+    const feaMat=new THREE.MeshStandardMaterial({color:0x3d382c, roughness:0.9, side:THREE.DoubleSide});
+    const feathers=[];
+    for(let k=0;k<5;k++){
+      const fg=new THREE.Group(); fg.position.set(tipX,0,sign*L2);
+      const len=0.42*L2*(1-0.07*k), w=Math.max(0.01,0.06*P.rootChord*(1-0.12*k));
+      const bx=new THREE.Mesh(new THREE.BoxGeometry(w,0.004,len), feaMat);
+      bx.position.z=sign*len/2; fg.add(bx); fg.userData.k=k; outer.add(fg); feathers.push(fg);
+    }
+    root.add(shoulder);
+    return {shoulder,inner,elbow,outer,feathers};
+  }
+  const R=mkWing(+1), Lw=mkWing(-1);
+  flockRoot.add(root);
+  // per-bird wingtip wake trails (world-space lines tracing each vortex core)
+  const mkTrail=c=>{ const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(new Float32Array(TRAIL_MAX*3),3));
+    const ln=new THREE.Line(g,new THREE.LineBasicMaterial({color:c,transparent:true,opacity:0.4}));
+    ln.frustumCulled=false; flockRoot.add(ln); return ln; };
+  const trailR=mkTrail(lead?0xffd18a:0xffb454), trailL=mkTrail(lead?0x8fe9df:0x4bd6c9);
+  return {root, skin, trailR, trailL, wingMats:[wingMat, wingMat2],
+          wingR:R.shoulder, wingRin:R.inner, wingRelbow:R.elbow, wingRout:R.outer, wingRtips:R.feathers,
+          wingL:Lw.shoulder, wingLin:Lw.inner, wingLelbow:Lw.elbow, wingLout:Lw.outer, wingLtips:Lw.feathers, tail};
+}
+function disposeMesh(mesh){
+  if(!mesh) return;
+  flockRoot.remove(mesh.root); mesh.root.traverse(o=>o.geometry&&o.geometry.dispose());
+  if(mesh.trailR) flockRoot.remove(mesh.trailR);
+  if(mesh.trailL) flockRoot.remove(mesh.trailL);
+}
+// (Re)build meshes for every bird, keeping their flight states. Called when wing geometry changes.
+function rebuildMeshes(){
+  for(const st of birds){
+    disposeMesh(st.mesh);
+    st.mesh = makeBirdMesh(st.leaderIdx==null);
+    st.trailR=[]; st.trailL=[];
+  }
+}
+function buildBird(){ rebuildMeshes(); }   // back-compat name used by slider handlers
+
+/* --------------------------------------------------------- FORCE ARROWS */
+const arrows = {};
+function mkArrow(color){
+  const a = new THREE.ArrowHelper(V3(0,1,0), V3(), 1, color, undefined, undefined);
+  a.line.material.linewidth=3; scene.add(a); return a;
+}
+arrows.lift   = mkArrow(0x4bd6c9);
+arrows.thrust = mkArrow(0xffb454);
+arrows.drag   = mkArrow(0xff6b6b);
+arrows.weight = mkArrow(0x9aa7ff);
+
+/* (Removed the teal pace-setter chevron + dashed gap line — a leftover debug marker that served no
+   purpose in normal use and always hung near the flock.) */
+function setArrow(a, origin, vec, scale){
+  const len = vec.length()*scale;
+  if(len < 1e-3 || !P.vForces){ a.visible=false; return; }
+  a.visible=true; a.position.copy(origin);
+  a.setDirection(vec.clone().normalize());
+  a.setLength(clamp(len,0.05,60), Math.min(len*0.28,2.2), Math.min(len*0.16,1.2));
+}
+
+/* --------------------------------------------------------- WIND FLOW PARTICLES */
+let flow, flowPos, flowN=900, flowVel=[];
+function buildFlow(){
+  if(flow) scene.remove(flow);
+  const g=new THREE.BufferGeometry();
+  flowPos=new Float32Array(flowN*3);
+  for(let i=0;i<flowN;i++) resetFlowParticle(i,true);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(flowPos,3));
+  const m=new THREE.PointsMaterial({color:0xdff3ff,size:0.12,transparent:true,opacity:0.5,depthWrite:false});
+  flow=new THREE.Points(g,m); scene.add(flow);
+}
+function resetFlowParticle(i, anywhere){
+  // spawn in a box ahead of / around the bird
+  const b = state ? state.pos : V3(0,20,0);
+  const x = b.x + (anywhere? (Math.random()*60-30) : (18+Math.random()*8));
+  const y = b.y + (Math.random()*24-12);
+  const z = b.z + (Math.random()*40-20);
+  flowPos[i*3]=x; flowPos[i*3+1]=Math.max(0.3,y); flowPos[i*3+2]=z;
+}
+
+/* --------------------------------------------------------- TRAILS */
+let trailL, trailR, trailPtsL=[], trailPtsR=[], TRAIL_MAX=160;
+function buildTrails(){
+  [trailL,trailR].forEach(t=>t&&scene.remove(t));
+  const mk=c=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(new Float32Array(TRAIL_MAX*3),3));
+    return new THREE.Line(g,new THREE.LineBasicMaterial({color:c,transparent:true,opacity:0.5}));};
+  trailL=mk(0x4bd6c9); trailR=mk(0xffb454); scene.add(trailL); scene.add(trailR); trailPtsL=[];trailPtsR=[];
+}
+function pushTrail(arr, line, p){
+  arr.push(p.x,p.y,p.z); if(arr.length>TRAIL_MAX*3) arr.splice(0,3);
+  const a=line.geometry.attributes.position.array;
+  a.fill(0);
+  for(let i=0;i<arr.length;i++) a[i]=arr[i];
+  line.geometry.attributes.position.needsUpdate=true;
+  line.geometry.setDrawRange(0, arr.length/3);
+}
+
+/* --------------------------------------------------------- WIND VECTOR FIELD */
+// A grid of 3D arrows showing the local wind, color-coded by vertical flow: green = updraft,
+// red = downdraft, pale blue = level. The grid follows the flock and snaps to its spacing so the
+// arrows appear to stream past. Toggle with P.vWind.
+let windField=null; const WF_NX=6, WF_NY=3, WF_NZ=6, WF_DX=7, WF_DY=6, WF_DZ=7;
+const _wfUp=new THREE.Color(0x39d98a), _wfDn=new THREE.Color(0xff6b6b), _wfMid=new THREE.Color(0x8fb8d8), _wfC=new THREE.Color();
+function buildWindField(){
+  if(windField) scene.remove(windField);
+  windField=new THREE.Group();
+  for(let i=0;i<WF_NX*WF_NY*WF_NZ;i++){
+    const a=new THREE.ArrowHelper(V3(1,0,0), V3(), 1, 0x8fb8d8, 0.9, 0.5);
+    a.line.material.transparent=true; a.line.material.opacity=0.7;
+    a.cone.material.transparent=true; a.cone.material.opacity=0.85;
+    windField.add(a);
+  }
+  windField.visible=false; scene.add(windField);
+}
+function updateWindField(){
+  if(!windField) return;
+  windField.visible=!!P.vWind;
+  if(!P.vWind) return;
+  const c=state?state.pos:V3(0,20,0);
+  const ox=Math.round(c.x/WF_DX)*WF_DX, oy=WF_DY, oz=Math.round(c.z/WF_DZ)*WF_DZ;
+  let idx=0;
+  for(let ix=0;ix<WF_NX;ix++)for(let iy=0;iy<WF_NY;iy++)for(let iz=0;iz<WF_NZ;iz++){
+    const px=ox+(ix-(WF_NX-1)/2)*WF_DX, py=oy+iy*WF_DY, pz=oz+(iz-(WF_NZ-1)/2)*WF_DZ;
+    const a=windField.children[idx++];
+    a.position.set(px,py,pz);
+    const w=windAt(V3(px,py,pz)); const mag=w.length();
+    if(mag<1e-3){ a.visible=false; continue; } a.visible=true;
+    a.setDirection(w.clone().multiplyScalar(1/mag));
+    a.setLength(clamp(mag*0.9,0.6,9), Math.min(mag*0.35,1.8), Math.min(mag*0.22,1.1));
+    // color by vertical component (updraft vs downdraft)
+    const vy=clamp(w.y/Math.max(mag,3), -1, 1);
+    if(vy>=0) _wfC.copy(_wfMid).lerp(_wfUp, vy); else _wfC.copy(_wfMid).lerp(_wfDn, -vy);
+    a.setColor(_wfC);
+  }
+}
+
+/* ============================================================ PHYSICS ===== */
+let state, derived={};
+const NS1 = 4, NS2 = 5; // blade-element strips: inner segment, outer segment (per wing)
+
+function recomputeDerived(){
+  const m=P.mass;
+  const mWing = m*P.wingMassFrac*clamp(P.boneThickness,0.3,3);   // both wings
+  const mHead = m*P.headMassFrac;
+  const mTail = m*P.tailMassFrac;
+  const mTorso = Math.max(0.01, m - mWing - mHead - mTail);
+  // center of mass (fore-aft), origin at torso center
+  const comX = (mHead*P.neckLen - mTail*P.tailLen)/m;
+  derived.com = V3(comX, 0, 0);
+  derived.mWing=mWing; derived.mHead=mHead; derived.mTail=mTail; derived.mTorso=mTorso;
+  // inertia (diagonal, body frame). rods & point masses.
+  const s2 = P.span*P.span;
+  const boneI = clamp(P.boneThickness,0.3,3);
+  const Ixx = (1/3)*mWing*s2 + mTorso*0.02;                          // roll (wings dominate)
+  const Izz = mHead*P.neckLen*P.neckLen + mTail*P.tailLen*P.tailLen + mTorso*0.03 + 0.02*mWing; // pitch
+  const Iyy = Ixx*0.4 + Izz;                                          // yaw
+  derived.I = V3(Math.max(Ixx,1e-3), Math.max(Iyy,1e-3), Math.max(Izz,1e-3));
+  // flap DOF inertia (both wings as rods about shoulder) * bone thickness
+  derived.Iflap = Math.max(1e-4, (1/3)*mWing*s2*boneI);
+  // wing area (sum inner + outer strips, matching the blade-element discretization)
+  let A=0;
+  for(let i=0;i<NS1;i++){ const gf=P.innerFrac*(i+0.5)/NS1; const c=P.rootChord*(1-(1-P.taper)*gf); A+=c*(P.innerFrac*P.span/NS1); }
+  for(let j=0;j<NS2;j++){ const gf=P.innerFrac+(1-P.innerFrac)*(j+0.5)/NS2; const c=P.rootChord*(1-(1-P.taper)*gf); A+=c*((1-P.innerFrac)*P.span/NS2); }
+  derived.wingArea = A*2;
+  derived.AR = (2*P.span)*(2*P.span)/derived.wingArea;
+  // body drag frontal area
+  derived.bodyA = 0.010*Math.pow(m,0.66);
+  // muscle Fmax auto-scaled so strength~1 sustains flap for this bird
+  const w = 2*Math.PI*P.flapFreq;
+  const demand = derived.Iflap*w*w*(P.flapAmp*DEG) + 0.5*P.rho*(P.launchSpeed*P.launchSpeed)*derived.wingArea*P.span*0.25;
+  derived.Fmax = P.muscleStrength * (demand/Math.max(P.momentArm,0.003)) * 5.0;
+}
+
+function makeBirdState(x0, z0){
+  const a=P.launchAngle*DEG;
+  const st = {
+    pos:V3(x0, P.startAlt, z0),
+    vel:V3(Math.cos(a)*P.launchSpeed, Math.sin(a)*P.launchSpeed, 0),
+    quat:new THREE.Quaternion(), omega:V3(0,0,0),
+    beta:0, betaDot:0, phase:Math.random()*6.283, fold:0, t:0, landed:false,
+    flapping:true, leadX:x0+P.followDist, baseAlt:P.startAlt, targetAlt:P.startAlt, transT:0, aspS:null, phaseT:0, flaps:0, flapDuty:1,
+    wakeWind:V3(), cmdRoll:0, cmdYaw:0, ampScale:1, effort:0,
+    leaderIdx:null, side:0, rank:0, leadFlash:0,
+    // emergent-flock state: who I'm drafting (chosen by me), who I'm overtaking, how tired I am,
+    // and my individual traits (sustainable power and how fast I like to fly)
+    target:null, passing:null, passT:0, passingT:0, lookT:0, vPref:P.paceSpeed,
+    fatigue:0, pS:0, vigor:1, drive:0, wander:0, vzCmd:null,
+    upL:0, upR:0, dfL:0, dfR:0,
+    trailR:[], trailL:[],
+    tel:{lift:0,thrust:0,drag:0,dragScalar:0,weight:P.mass*G,aoa:0,power:0,cyc:0,cycThrust:0,gap:0,coasting:false,foldDeg:0}
+  };
+  st.quat.setFromEuler(new THREE.Euler(0,0,a*0.4,'XYZ'));
+  return st;
+}
+// The formation is no longer ASSIGNED. Each bird chooses whom to draft (flockControl); this only
+// DESCRIBES the result for the HUD, colors, camera and the skim call: `order` = birds sorted
+// front-to-back along the flock's mean heading, rank = drafting links back to a self-leading bird,
+// side = which side of the bird it drafts it has settled on.
+function describeFlock(){
+  if(!birds.length) return;
+  let hx=0, hz=0; for(const b of birds){ hx+=b.vel.x; hz+=b.vel.z; }
+  const hn=Math.hypot(hx,hz)||1; hx/=hn; hz/=hn;
+  const along=b=>b.pos.x*hx + b.pos.z*hz;
+  order = birds.map((b,i)=>i).sort((i,j)=>along(birds[j])-along(birds[i]));
+  for(const b of birds){
+    let r=0, k=b;
+    while(k.target!=null && r<birds.length){ k=birds[k.target]; r++; }
+    b.rank=r; b.leaderIdx=b.target;
+  }
+  if(order[0]!==lastFront){ if(lastFront>=0) birds[order[0]].leadFlash=3.0; lastFront=order[0]; }
+}
+function gauss(){ return Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random()); }
+function resetFlock(){
+  recomputeDerived();
+  for(const st of birds) disposeMesh(st.mesh);
+  birds=[]; order=[]; lastFront=-1;
+  const n=Math.max(1, Math.round(P.nBirds));
+  const iv=P.individuality||0;
+  for(let i=0;i<n;i++){
+    const st = makeBirdState(0, 0);
+    st.id=i;
+    // individuals differ: sustainable power (fitness), preferred pace, and a head start on fatigue
+    st.vigor = clamp(1 + iv*gauss(), 0.6, 1.4);
+    st.drive = clamp(0.5*iv*gauss(), -0.15, 0.15);
+    st.fatigue = Math.random()*0.3;
+    st.mesh = makeBirdMesh(i===0);
+    birds.push(st); order.push(i);
+  }
+  // Starting arrangement. 'cluster' (default) is a loose random bunch with no structure at all, so
+  // whatever shape the flock settles into is the birds' doing. 'V' and 'line' are for comparison.
+  const placed=[];
+  for(let i=0;i<n;i++){
+    const st=birds[i];
+    if(P.startFormation==='V'){ const r=Math.ceil(i/2), s=(i%2?1:-1); st.pos.set(-r*P.slotDx, P.startAlt, i?s*r*P.slotDz:0); }
+    else if(P.startFormation==='line'){ st.pos.set(-i*P.slotDx, P.startAlt, 0); }
+    else {
+      let x=0, z=0;
+      for(let tries=0; tries<200; tries++){
+        x=-Math.random()*n*P.slotDx*0.9; z=(Math.random()-0.5)*n*P.slotDz*0.45;
+        if(placed.every(p=>Math.hypot(p[0]-x,p[1]-z) > 2.6*P.span)) break;
+      }
+      placed.push([x,z]); st.pos.set(x, P.startAlt+(Math.random()-0.5), z);
+    }
+    st.leadX = st.pos.x + P.followDist;
+  }
+  describeFlock();
+  focus=0; state=birds[0]; telemetry=state.tel;
+  // reset the surface-skim cycle to a fresh high cruise
+  skimState='cruise'; skimHold=0; flockBaseAlt=P.startAlt; skimCountdown=P.skimPeriod*(0.6+Math.random()*0.8);
+  buildShadows();
+  chartData.length=0;
+}
+function resetState(){ resetFlock(); }   // back-compat name used elsewhere
+
+function windWorld(){ return V3(-P.headwind, P.updraft, P.crosswind); }
+// Time- AND space-varying wind: the steady base plus smooth layered gusts, so the air is never
+// truly still and different birds feel different air at the same moment -- which is what forces the
+// flock to keep adjusting. Turbulence 0 = the old steady environment (good for tuning).
+let windT = 0;
+function windAt(pos){
+  const w = V3(-P.headwind, P.updraft, P.crosswind);
+  const s = P.turbulence||0;
+  if(s>0){
+    const t=windT, x=pos.x*0.06, z=pos.z*0.06, y=pos.y*0.05;
+    // a few incommensurate sines in space+time -> smooth, non-repeating gust field
+    const gx = Math.sin(x + 0.7*t) + 0.6*Math.sin(0.5*z - 1.13*t + 1.7);
+    const gy = 0.8*Math.sin(0.8*x - 0.9*t + 2.1) + 0.7*Math.sin(0.6*z + 0.53*t) + 0.4*Math.sin(0.9*y+0.4*t);
+    const gz = Math.sin(0.7*z + 0.83*t) + 0.6*Math.sin(0.45*x + 1.27*t + 0.6);
+    // vertical gusts can't pass through the water: they fade out over the last metre or two
+    w.x += s*gx; w.y += s*0.8*gy*(1 - Math.exp(-Math.max(pos.y,0)/1.5)); w.z += s*gz;
+  }
+  return w;
+}
+
+// full-range lift/drag coefficients (blend linear -> flat plate past stall)
+function aeroCoeffs(alpha){
+  const aStall=P.stallDeg*DEG;
+  const CLlin=P.clAlpha*alpha;
+  const CLfp=1.9*Math.sin(2*alpha);
+  let w=clamp(Math.abs(alpha)/(aStall*1.7),0,1); w=smooth(w);
+  const CL=(1-w)*CLlin + w*CLfp;
+  const CDlin=P.cd0 + P.inducedK*CLlin*CLlin;
+  const CDfp=P.cd0 + 2.0*Math.sin(alpha)*Math.sin(alpha);
+  const CD=(1-w)*CDlin + w*CDfp;
+  return [CL,CD,w];
+}
+
+// Rodrigues rotation of v about unit axis k by angle th (returns new Vector3)
+const _t1=V3(),_t2=V3();
+function rot(v,k,th){
+  const c=Math.cos(th), s=Math.sin(th);
+  _t1.copy(k).cross(v);
+  _t2.copy(k).multiplyScalar(k.dot(v)*(1-c));
+  return V3(
+    v.x*c + _t1.x*s + _t2.x,
+    v.y*c + _t1.y*s + _t2.y,
+    v.z*c + _t1.z*s + _t2.z
+  );
+}
+
+// Commanded wingbeat: warped phase for down/up asymmetry. Returns beta and its 1st & 2nd
+// derivatives w.r.t. phase (the 2nd is used by the muscle motor controller).
+function flapKinematics(phase){
+  const dwn = clamp(0.5 - P.upDownAsym*0.5, 0.15, 0.85);
+  const ph = ((phase%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
+  let u, dudph;
+  if(ph < 2*Math.PI*dwn){ u=(ph/(2*Math.PI*dwn))*Math.PI; dudph=Math.PI/(2*Math.PI*dwn); }
+  else { u=Math.PI+((ph-2*Math.PI*dwn)/(2*Math.PI*(1-dwn)))*Math.PI; dudph=Math.PI/(2*Math.PI*(1-dwn)); }
+  const amp=P.flapAmp*DEG*flapAmpScale;   // flapAmpScale tapers the beat down before coasting
+  const beta   = amp*Math.cos(u);
+  const dbeta  = -amp*Math.sin(u)*dudph;              // dβ/dphase
+  const d2beta = -amp*Math.cos(u)*dudph*dudph;        // d²β/dphase²
+  return [beta, dbeta, d2beta];
+}
+
+/* Compute all aerodynamic + muscle terms for the CURRENT state.
+   Returns forces in WORLD, torque in BODY, generalized flap force, telemetry. */
+const _q=new THREE.Quaternion(), _qi=new THREE.Quaternion(), _m=new THREE.Matrix4();
+const _lvF=V3(), _lvU=V3(), _lvD=V3(), _lvQ=new THREE.Quaternion(), _lvI=new THREE.Quaternion();  // roll-leveler temps
+function computeForces(st){
+  const T = st.tel || (st.tel={});                       // per-bird telemetry
+  const R=_m.makeRotationFromQuaternion(st.quat);
+  const inv=_qi.copy(st.quat).invert();
+  const wind=windAt(st.pos);
+  if(st.wakeWind){                       // add the wake: vertical upwash always; forward slipstream gated so it can't overtake
+    const g = (st.draftGate==null?1:st.draftGate);   // the slipstream is horizontal (along the drafted bird's heading)
+    wind.x += st.wakeWind.x * g;
+    wind.y += st.wakeWind.y;
+    wind.z += st.wakeWind.z * g;
+  }
+  // air velocity relative to COM, in BODY frame
+  const relAir=V3().subVectors(wind, st.vel).applyQuaternion(inv);
+
+  const netFbody=V3(), torqueBody=V3();
+  let Qaero=0, Qgrav=0, lowY=1e9;
+  let sumLiftUp=0, sumFwd=0, sumDrag=0, aoaAcc=0, aoaN=0, stalled=0;
+
+  const dih=P.dihedral*DEG;
+  const gBody=V3(0,-G,0).applyQuaternion(inv);
+
+  // ---- FEATHER: dynamic nose-down twist on the downstroke (destall -> more thrust) ----
+  const flapping = (st.flapping !== false);                     // false only while coasting
+  const betaDotMax = Math.max(1e-3, P.flapAmp*DEG * 2*Math.PI*Math.max(P.flapFreq,0.01));
+  const fr = clamp(st.betaDot/betaDotMax, -1.4, 1.4);
+  const feath = (flapping && st.betaDot < 0) ? (P.featherAmp*DEG)*fr : 0;   // radians, nose-down on downstroke
+
+  // ---- WING FOLD: the wing extends + stiffens on the downstroke for full force, and the
+  // elbow flexes on the upstroke to shed span, area and flap inertia (cheap upstroke). The
+  // flex scales with how RAISED the arm is, so it's greatest near the top of the upstroke --
+  // that's when the swept-back hand hangs lowest and the wing reads as an "M".
+  const ampR = Math.max(P.flapAmp*DEG, 1e-3);
+  const upstroke = st.betaDot > 0;
+  const armUp = clamp(st.beta/ampR, 0, 1);                      // 0 (level) .. 1 (fully raised)
+  const fold01 = (flapping && upstroke) ? armUp : 0;           // flex the raised wing; extend for the downstroke
+  const foldFrac = P.foldAmount * fold01;                       // 0..foldAmount
+  const gamma = foldFrac * P.maxFoldDeg*DEG;                    // elbow flex angle (rad)
+  const gammaDot = (flapping && upstroke && armUp>0 && armUp<1) ? P.foldAmount*(st.betaDot/ampR)*P.maxFoldDeg*DEG : 0;
+  st.fold = foldFrac;
+  T.foldDeg = foldFrac*P.maxFoldDeg;
+  const foldNorm = clamp(gamma/Math.max(P.maxFoldDeg*DEG,1e-3), 0, 1);
+
+  const L1 = P.span*P.innerFrac;                                // inner (humerus) length
+  let Iflap = 0;                                                // dynamic flap inertia (both wings)
+
+  // one blade element. twistRad = geometric AoA (rad); dAaero for forces, dAmass for inertia/gravity.
+  function addStrip(sign, s, p, rFromSh, vWing, twistRad, dAaero, dAmass){
+    const rC = V3().subVectors(p, derived.com);
+    const dpdb = V3().crossVectors(V3(-sign,0,0), rFromSh);     // d(pos)/d(flap angle): whole wing about shoulder x
+    const mstrip = derived.mWing*dAmass/Math.max(derived.wingArea,1e-4);
+    Iflap += mstrip*dpdb.lengthSq();
+    Qgrav += gBody.dot(dpdb)*mstrip;
+    let chord=V3(1,0,0), normal=V3().crossVectors(s,chord); if(normal.y<0) normal.negate(); normal.normalize();
+    const tw=twistRad*sign;
+    chord=rot(chord,s,tw); normal=rot(normal,s,tw);
+    const vRot=V3().crossVectors(st.omega, rC);
+    const vRel=V3().copy(relAir).sub(vRot).sub(vWing);
+    const sp2=vRel.lengthSq();
+    if(sp2<1e-6) return;
+    const uc=vRel.dot(chord), un=vRel.dot(normal);
+    const alpha=Math.atan2(un, -uc);
+    let [CL,CD,w]=aeroCoeffs(alpha);
+    if(w>0.55) stalled++;
+    let geMul=1;
+    const worldY=st.pos.y + p.clone().applyQuaternion(st.quat).y;
+    if(worldY<lowY) lowY=worldY;                     // lowest wing point -> tip clearance over the water
+    if(P.groundEffect){
+      const h=Math.max(0.05,worldY);
+      const ge=Math.exp(-h/(3*P.span));              // reaches ~a wingspan-and-a-half up
+      geMul=1+P.geStrength*0.22*ge;                   // modest extra lift (kept small so it doesn't bounce the bird out of GE)
+      CD=P.cd0+(CD-P.cd0)*(1-Math.min(0.9,0.9*P.geStrength*ge)); // induced drag largely collapses near the surface -> long cheap glides
+    }
+    const q=0.5*P.rho*sp2;
+    const L=q*dAaero*CL*geMul, D=q*dAaero*CD;
+    let liftDir=V3().crossVectors(vRel,s); if(liftDir.lengthSq()<1e-9) return;
+    liftDir.normalize(); if(liftDir.dot(normal)<0) liftDir.negate();
+    const dragDir=V3().copy(vRel).normalize();
+    const F=V3().addScaledVector(liftDir,L).addScaledVector(dragDir,D);
+    netFbody.add(F);
+    torqueBody.add(V3().crossVectors(rC,F));
+    Qaero += F.dot(dpdb);
+    sumLiftUp+=L; sumDrag+=D; aoaAcc+=alpha; aoaN++;
+  }
+
+  for(const sign of [+1,-1]){
+    const be = st.beta + dih;
+    const s1 = V3(0, Math.sin(be), sign*Math.cos(be));           // inner spanwise
+    const shoulder = V3(P.rootChord*0.1, 0.02, sign*0.03);
+    let n1 = V3().crossVectors(s1, V3(1,0,0)); if(n1.y<0) n1.negate(); n1.normalize();  // wing normal = fold axis
+    const omega1 = V3(-sign*st.betaDot, 0, 0);                   // inner-segment angular velocity (flap)
+    const elbow = shoulder.clone().addScaledVector(s1, L1);
+    // Elbow flexion is IN-PLANE, about the wing normal -- exactly like a real elbow, which
+    // hinges in one plane; it cannot bend up/out of the wing. The hand sweeps back within
+    // the (raised) wing plane, so a raised arm's swept hand naturally drops below the elbow.
+    let s2=rot(s1, n1, -sign*gamma);                            // in-plane backsweep
+    const omegaFold=n1.clone().multiplyScalar(-sign*gammaDot);
+    const elbowVel = V3().crossVectors(omega1, V3().subVectors(elbow, shoulder));
+
+    // INNER segment (rigid arm)
+    for(let i=0;i<NS1;i++){
+      const gf=P.innerFrac*(i+0.5)/NS1, r=gf*P.span;
+      const c=P.rootChord*(1-(1-P.taper)*gf);
+      const sw=-Math.tan(P.sweep*DEG)*r;
+      const dA=c*(P.innerFrac*P.span/NS1);
+      const p=V3(shoulder.x+sw+0.10*c, shoulder.y, shoulder.z).addScaledVector(s1, r);
+      const rFromSh=V3().subVectors(p, shoulder);
+      const vWing=V3().crossVectors(omega1, rFromSh);
+      addStrip(sign, s1, p, rFromSh, vWing, P.innerAoA*DEG+feath, dA, dA);
+    }
+    // OUTER segment (hand-wing that folds on the upstroke)
+    for(let j=0;j<NS2;j++){
+      const gf=P.innerFrac+(1-P.innerFrac)*(j+0.5)/NS2, r2=(gf-P.innerFrac)*P.span;
+      const c=P.rootChord*(1-(1-P.taper)*gf);
+      const sw=-Math.tan(P.sweep*DEG)*(gf*P.span);
+      const dA=c*((1-P.innerFrac)*P.span/NS2);
+      const areaF=Math.max(1-0.45*foldNorm, 0.3);                // feather overlap reduces exposed area when folded
+      const p=V3(elbow.x+sw+0.10*c, elbow.y, elbow.z).addScaledVector(s2, r2);
+      const rFromSh=V3().subVectors(p, shoulder);
+      const rFromEl=V3().subVectors(p, elbow);
+      const vWing=V3().copy(elbowVel).add(V3().crossVectors(V3().addVectors(omega1, omegaFold), rFromEl));
+      addStrip(sign, s2, p, rFromSh, vWing, P.outerAoA*DEG+feath, dA*areaF, dA);
+    }
+  }
+  derived.IflapDyn = Math.max(1e-4, Iflap);
+
+  // ---- TAIL (horizontal stabilizer) as a single strip at the rear ----
+  {
+    const rC=V3(-P.tailLen,0,0).sub(derived.com);
+    const vRot=V3().crossVectors(st.omega,rC);
+    const vRel=V3().copy(relAir).sub(vRot);
+    const sp2=vRel.lengthSq();
+    if(sp2>1e-6){
+      const s=V3(0,0,1);
+      let chord=V3(1,0,0), normal=V3(0,1,0);
+      const th=P.tailIncidence*DEG;
+      chord=rot(chord,s,th); normal=rot(normal,s,th);
+      const uc=vRel.dot(chord), un=vRel.dot(normal);
+      const alpha=Math.atan2(un,-uc);
+      const [CL,CD]=aeroCoeffs(alpha);
+      const q=0.5*P.rho*sp2;
+      const L=q*P.tailArea*CL, D=q*P.tailArea*CD;
+      let liftDir=V3().crossVectors(vRel,s).normalize(); if(liftDir.dot(normal)<0) liftDir.negate();
+      const dragDir=V3().copy(vRel).normalize();
+      const F=V3().addScaledVector(liftDir,L).addScaledVector(dragDir,D);
+      netFbody.add(F); torqueBody.add(V3().crossVectors(rC,F));
+      sumDrag+=D;
+    }
+  }
+
+  // ---- convert aero force to world ----
+  const aeroWorld=netFbody.clone().applyQuaternion(st.quat);
+
+  // ---- body (fuselage) parasitic drag, world ----
+  const vair=V3().subVectors(st.vel, wind); const spd=vair.length();
+  const Fbd=V3();
+  if(spd>1e-4) Fbd.copy(vair).multiplyScalar(-0.5*P.rho*P.bodyCd*derived.bodyA*spd);
+  // wingtip primary-feather brake: spreading the primaries adds drag to decelerate and control.
+  // A drafting glide is otherwise CLEAN (low drag) so a bird can ride it a long way; the user can
+  // dial tipSpread up as a manual airbrake. It ALSO auto-flares (st.brake) when a bird is overrunning
+  // the one ahead -- that's what stops followers sliding past the no-draft lead (esp. during a skim,
+  // where everyone glides and the lead, with the most drag, would otherwise drop into the pack).
+  const tipSp = clamp((P.tipSpread||0) + (st.brake||0), 0, 1);
+  let tipBrake=0;
+  if(spd>1e-4 && tipSp>0.02){
+    tipBrake = 0.5*P.rho*spd*spd*((0.06+0.16*(st.brake||0))*derived.wingArea)*tipSp;   // stronger flare when actively braking
+    Fbd.addScaledVector(V3().copy(vair).multiplyScalar(1/spd), -tipBrake);
+  }
+
+  // ---- gravity ----
+  const Fg=V3(0,-P.mass*G,0);
+
+  const netWorld=V3().add(aeroWorld).add(Fbd).add(Fg);
+
+  // ---- FORMATION STATION-KEEPING (lateral steering trim) ----
+  // Holding a slot sideways is a steering task (the bird banks/sideslips), not propulsion, so
+  // it gets a dedicated well-damped lateral force here instead of relying on bank-to-translate
+  // (too twitchy under flapping's variable lift). Forward propulsion is NOT assisted -- x-station
+  // stays entirely flap-driven. Capped at a fraction of weight so it reads as a trim, not a jet.
+  // ---- ALTITUDE HOLD (bounded vertical trim) ----
+  // Attitude/pitch alone leaves a slow flap-coast phugoid that diverges into a dive after ~45s.
+  // A real bird actively modulates its lift (wing area, AoA, tail) to hold height; model that as
+  // a bounded vertical spring-damper toward the cruise line. It decouples the two jobs cleanly:
+  // the wingbeat still provides all the FORWARD thrust (emergent, not assisted), and a coast
+  // still bleeds SPEED to drag (which is what drives the drafting wave) -- this only stops the
+  // height from wandering. Capped well under a g so it's a trim, not a lift jet.
+  if(st.targetAlt!=null && P.flapStrategy==='intermittent'){
+    // Cap is generous (1.0 W) but only ever bites on a BIG vertical move -- at cruise the error is
+    // tiny so the trim is a whisper. The headroom is what lets the flock actually DESCEND to skim:
+    // a coasting glide speeds up and its lift climbs past W, so a weak cap couldn't overcome the
+    // excess lift and the dive stalled out halfway down. This lets the lead's dip reach the surface.
+    // Within a metre or so of the water a skimming bird holds its height far more tightly (it is
+    // watching the surface, and ground effect itself stiffens the height), so the trim firms up there.
+    const W=P.mass*G, capY=1.0*W, low=1 + 2*clamp(1.5 - st.targetAlt, 0, 1);
+    // + st.altTrim: the slowly learned steady lift correction (see flockControl), so a glide whose wings
+    // lift a bit less than the weight doesn't have to sag below its height to be held up
+    const fy = P.mass*(1.8*low*(st.targetAlt - st.pos.y) + 2.6*Math.sqrt(low)*((st.targetVy||0) - st.vel.y) + (st.altTrim||0));
+    netWorld.y += clamp(fy, -capY, capY);
+  }
+  // HARD WATER CUSHION (safety, uncapped): below ~1.6 m an escalating upward push plus a strong
+  // arrest of any downward speed keeps a downgust -- or an over-eager dip -- from actually ditching
+  // a bird into the sea during a surface skim. It's silent above 1.2 m, so it never touches cruise.
+  // The cushion starts lower when the bird is deliberately skimming lower (80% of its target height).
+  const cushTop = Math.min(1.6, 0.8*(st.targetAlt==null ? 2 : st.targetAlt));
+  if(st.pos.y < cushTop){
+    const d = cushTop - st.pos.y;
+    netWorld.y += P.mass*((20/cushTop)*d + (st.vel.y<0 ? -5.0*st.vel.y : 0));
+  }
+
+  if(st.vzCmd!=null){
+    // Sideways station: flockControl asks for a lateral velocity (follow the bird ahead's drift, plus
+    // whatever slide toward better air it wants). A firm, capped side-velocity trim stands in for the
+    // bank-and-sideslip a bird would use -- capped so a big slide can't spin up a lift-robbing sideslip.
+    const W=P.mass*G, capZ=0.52*W;
+    const fz = P.mass*2.5*(st.vzCmd - st.vel.z);
+    netWorld.z += clamp(fz, -capZ, capZ);
+  }
+
+  // ---- angular aerodynamic damping (airframe + feathers), body frame ----
+  const qref=0.5*P.rho*Math.max(spd*spd, 4);
+  const dampT=V3().copy(st.omega).multiplyScalar(-P.angDamp*qref*0.02*derived.wingArea*P.span);
+  torqueBody.add(dampT);
+
+  // ---- ACTIVE STABILIZATION: a bird's tail/head/wing reflexes (closed-loop).
+  // Drives pitch toward a trim attitude and levels roll, with a yaw damper. At
+  // stab=0 you get the raw open-loop dynamics (phugoid, upsets); turn it up to fly.
+  if(P.stab>0){
+    const fwd=V3(1,0,0).applyQuaternion(st.quat);
+    const right=V3(0,0,1).applyQuaternion(st.quat);
+    // In flap-coast, hold the flock's altitude line by commanding pitch (outer loop):
+    // pitch up when sagging below it, nose down when above -- so flapping climbs and
+    // coasting descends around a stable mean instead of drifting into the water.
+    // Active altitude hold: command pitch to hold the cruise line and damp vertical rate.
+    // Applies in both flap strategies (a real bird actively holds its height); disabled only
+    // when stabilization is off, so stab=0 still shows the raw open-loop phugoid.
+    const altErr=(st.targetAlt||st.pos.y)-st.pos.y;
+    // Stiff, over-damped pitch loop with strong vertical-rate damping: holds a firm altitude
+    // trim and actively arrests a sink, so the slow flap-coast phugoid can't build into a dive.
+    const trimEff=clamp(P.trimPitch + 1.6*altErr + 2.6*((st.targetVy||0) - st.vel.y), -10, 22);
+    const pitchErr=fwd.y - Math.sin(trimEff*DEG);       // nose elevation vs (altitude-holding) trim
+    // Physics roll is held WINGS-LEVEL (the strongest, most stable choice). Lateral station is
+    // done by the dedicated damped side-force above, not by banking -- letting the roll loop bank
+    // to translate makes an underdamped roll/side-slip loop that diverges after ~40s. The visual
+    // bank (birds do lean into a correction) is added cosmetically to the mesh, off the physics.
+    // roll target is the commanded coordinated BANK (right.y = -sin(bank)); 0 = wings level when straight
+    const rollErr=right.y + Math.sin(st.bankCmd||0);
+    const wn=4.6, ze=1.1, g=P.stab;
+    const aPitch=(-wn*wn*pitchErr - 2*ze*wn*st.omega.z)*g;
+    // Roll leveling + DIRECTIONAL (weathercock) stability. Dihedral turns any sideslip into
+    // roll; without a yaw stiffness pulling the nose back to the flight line, that pairing is a
+    // divergent spiral -- level for a minute, then a numerical nudge winds it into a flip. The
+    // heading term is the missing vertical-tail effect: it holds the nose along the flight line
+    // (+x), which makes roll=0 a genuinely stable equilibrium.
+    // heading target is the commanded coast heading (st.hdgCmd), not a fixed +x flight line -> the bird
+    // yaws to point along the shore. wrap so a turn through +/-pi doesn't snap.
+    const head=wrapPi(Math.atan2(fwd.z, fwd.x) - (st.hdgCmd||0));
+    // NB roll's restoring sign is OPPOSITE pitch's: right.y = -sin(roll) whereas fwd.y = +sin(pitch),
+    // so the spring term is +wn^2*rollErr (a - sign here silently makes roll leveling DIVERGENT).
+    const aRoll =(+1.4*wn*wn*rollErr - 2*6.5*wn*st.omega.x)*g;
+    // Yaw: +sign restores heading toward the commanded heading (about body-up, +omega.y DECREASES
+    // heading). Strong yaw-rate damping keeps the Dutch-roll mode dead.
+    const aYaw  =(+0.7*wn*wn*head - 2*6.5*wn*st.omega.y)*g;
+    torqueBody.z += derived.I.z*aPitch;
+    torqueBody.x += derived.I.x*aRoll;
+    torqueBody.y += derived.I.y*aYaw;
+    T.ctrlPitch = derived.I.z*aPitch;
+  }
+
+  // ---- world-frame force decomposition for readouts ----
+  const flightDir=V3(vair.x,0,vair.z); const fdlen=flightDir.length();
+  if(fdlen>1e-3) flightDir.multiplyScalar(1/fdlen); else flightDir.set(1,0,0);
+  const up=V3(0,1,0);
+  const liftN = aeroWorld.dot(up);                    // vertical aero force
+  const fwdN  = aeroWorld.clone().sub(Fbd.clone().multiplyScalar(0)).dot(flightDir); // net aero along flight
+  T.lift = liftN;
+  T.thrust = aeroWorld.dot(flightDir) + Fbd.dot(flightDir); // net forward (aero+bodydrag)
+  T.dragScalar = sumDrag + spd*0.5*P.rho*P.bodyCd*derived.bodyA*spd + tipBrake;
+  T.aoa = aoaN? (aoaAcc/aoaN) : 0;
+  T.stalled = stalled;
+  T.lowY = lowY;                                      // lowest wing point this step (m above water)
+  T.aeroWorld = aeroWorld;
+  T.flightDir = flightDir;
+  T.Fg = Fg;
+
+  return {netWorld, torqueBody, Qaero, Qgrav};
+}
+
+// Maximum torque the two flight muscles can deliver about the flap axis RIGHT NOW,
+// as a function of muscle state. Depressor (pectoralis) pulls the wing DOWN, elevator
+// (supracoracoideus) pulls it UP. Each is limited by strength, a length-tension curve
+// (falls off away from optimal wing angle) and a Hill force-velocity curve (force drops
+// the faster the muscle shortens; it can resist more while being stretched).
+function muscleCapacity(st){
+  const flDep=Math.exp(-Math.pow((st.beta*RAD - P.muscleOptBeta)/P.muscleWidth, 2));
+  const flEle=Math.exp(-Math.pow((st.beta*RAD + P.muscleOptBeta)/P.muscleWidth, 2));
+  const hill=v => v>=0 ? clamp((P.vmax - v)/(P.vmax + 3*v), 0, 1) : 1.4;  // concentric / eccentric
+  const tired=1 - 0.4*(st.fatigue||0);   // a fatigued pectoralis simply can't pull as hard
+  const capDep=Math.max(0, tired*derived.Fmax*P.momentArm*flDep*hill(-st.betaDot));
+  const capEle=Math.max(0, tired*derived.Fmax*P.momentArm*P.elevatorFrac*flEle*hill(st.betaDot));
+  return {dep:capDep, ele:capEle};
+}
+
+let flapAmpScale=1;   // 1 normally; tapers <1 as the bird eases out of a flap burst into a coast
+/* ---------------------------------------------------- PER-BIRD PHYSICS STEP */
+// Advance ONE bird by dt: run its flap DOF (coast / prescribed / muscle), the
+// aero + muscle force model, then the 6-DOF body integrator. flockControl (below)
+// has already set st.flapping, st.ampScale, st.cmdRoll/cmdYaw and st.wakeWind.
+function stepBird(st, dt){
+  const T = st.tel;
+  flapAmpScale = st.ampScale || 1;             // per-bird beat taper (read by flapKinematics)
+
+  if(!st.flapping){
+    // COAST: relax the wing to its glide angle and glide -- no flapping thrust, so the
+    // bird slowly loses speed to drag (fold & feather are gated off in computeForces).
+    const bt=P.coastBeta*DEG, a=1-Math.exp(-dt/0.12);
+    const nb=st.beta+(bt-st.beta)*a;
+    st.betaDot=(nb-st.beta)/dt; st.beta=nb;
+    const f=computeForces(st);
+    stepBody(st,f,dt);
+    T.power=0;
+  } else if(P.mode==='prescribed'){
+    const phaseDot=2*Math.PI*P.flapFreq;
+    const [beta,dbeta]=flapKinematics(st.phase);
+    st.beta=beta; st.betaDot=dbeta*phaseDot;
+    st.phase += phaseDot*dt;
+    const f=computeForces(st);
+    stepBody(st,f,dt);
+    T.power = Math.abs((f.Qaero)*st.betaDot);   // aerodynamic flap power
+  } else {
+    // MUSCLE-DRIVEN: the bird commands a wingbeat; the muscles try to follow it but can
+    // only deliver up to their available torque. Enough strength (and a folded, low-load
+    // upstroke) -> it tracks the command and flies. Too weak, wings too heavy/dense air,
+    // or fold turned off -> the muscles saturate, the wingbeat falls short, and it sinks.
+    const phaseDot=2*Math.PI*Math.max(P.flapFreq,0.001);
+    const [bt,dbt,d2bt]=flapKinematics(st.phase);
+    const btDot=dbt*phaseDot, btDDot=d2bt*phaseDot*phaseDot;
+    const f=computeForces(st);
+    const Ifl=derived.IflapDyn||derived.Iflap;
+    const cDamp=0.02*Ifl*phaseDot;
+    const kp=Math.pow(0.6*phaseDot,2), kd=2*0.9*(0.6*phaseDot);
+    const tauFF = Ifl*btDDot - f.Qaero - f.Qgrav + cDamp*btDot;
+    const tauFB = Ifl*(kp*(bt-st.beta) + kd*(btDot-st.betaDot));
+    const tauReq = tauFF + tauFB;
+    const cap=muscleCapacity(st);
+    const tauAct = clamp(tauReq, -cap.dep, cap.ele);   // depressor(−) / elevator(+) limits
+    const betaDDot=(tauAct + f.Qaero + f.Qgrav - cDamp*st.betaDot)/Ifl;
+    st.betaDot += betaDDot*dt; st.betaDot=clamp(st.betaDot,-60,60);
+    st.beta += st.betaDot*dt; st.beta=clamp(st.beta,-80*DEG,80*DEG);
+    st.phase += phaseDot*dt;
+    stepBody(st,f,dt);
+    T.power=Math.abs(tauAct*st.betaDot);        // real muscle mechanical power
+    const have=(tauReq<0?cap.dep:cap.ele);
+    T.effort = have>1e-6 ? clamp(Math.abs(tauReq)/have,0,2) : 2;   // >1 = saturated
+  }
+  // running energy tally (compare lead vs drafting followers) + cycle-avg thrust
+  st.effort = (st.effort||0) + (T.power||0)*dt;
+  // FATIGUE: a smoothed (~4 s) flap power above this bird's sustainable level builds fatigue; below it
+  // the bird recovers. Breaking clean air at the front costs more than riding a wake, so whoever is
+  // out front tires -- nothing tells it to; it's just paying the bill.
+  st.pS += ((T.power||0) - st.pS)*Math.min(1, dt/4);
+  const pSus = Math.max(1, P.sustainPower*(st.vigor||1));
+  st.fatigue = clamp(st.fatigue + dt*(st.pS/pSus - 1)/Math.max(P.fatigueTime,1), 0, 1);
+  T.fatigue = st.fatigue;
+  T.cyc += dt;
+  T.cycThrust = 0.98*T.cycThrust + 0.02*(T.thrust||0);
+  st.t += dt;
+}
+
+/* ---------------------------------------------------- FLOCK CONTROL (per bird) */
+// Every decision here is LOCAL to one bird: what it can see (birds ahead of it, birds right beside
+// it), what it can feel (the lift on each wing, its own speed) and its own state (fatigue, traits).
+// There are no slots, no arms, no assigned leader and no swap timer. Five rules:
+//  1. PACE     -- I want to fly at my own preferred speed, which drops as I tire.
+//  2. DRAFT    -- if there's a bird ahead of me, I follow the nearest one at my follow distance.
+//                 If there isn't, I'm leading: I fly my pace along the coast (easing off if the
+//                 flock behind me is dropping away).
+//  3. SEEK AIR -- I slide sideways toward whichever wing feels more lift / less drag (the roll a
+//                 bird feels when one wing sits in upwash). Where birds settle -- V, echelon,
+//                 single file -- is wherever the wake field has its ridges.
+//  4. SPACE    -- don't overlap a bird alongside me.
+//  5. PASS     -- if the bird I'm drafting keeps flying slower than I want to go, I pull out and
+//                 go by. A tiring leader slows down, fresher birds go past, and it drops back into
+//                 someone's wake to recover. That is the whole lead "rotation".
+//  6. CLEAR VIEW -- keep an open view ahead on at least one side. If there are birds ahead of me on
+//                 BOTH sides I'm boxed in: drift toward the less crowded side and ease back a rank
+//                 until one side opens up. (The "visual" hypothesis for V formations.) Without it,
+//                 boxed-in birds sit in the combined downwash of the birds around them -- measured
+//                 ~0.1 vs ~0.5 m/s upwash on an arm, and ~25% more flap power -- and the flock fills
+//                 in as a diamond instead of a V.
+const _sL=V3(), _sR=V3();
+function flockControl(st, dt){
+  const T=st.tel, w0=windAt(st.pos);
+  const asp=V3().subVectors(st.vel,w0).length();
+  st.aspS=(st.aspS==null)?asp:st.aspS+(asp-st.aspS)*0.02;
+  const gs=Math.hypot(st.vel.x, st.vel.z);                     // horizontal groundspeed
+  st.gsS=(st.gsS==null)?gs:st.gsS+(gs-st.gsS)*0.02;
+  st.phaseT=(st.phaseT||0)+dt;
+  const _fwd=V3(1,0,0).applyQuaternion(st.quat);
+  const heading=Math.atan2(_fwd.z,_fwd.x);
+  const fx=Math.cos(heading), fz=Math.sin(heading);          // my forward axis in (x,z)
+  const nx=-fz, nz=fx;                                       // my lateral axis (+z when heading +x)
+  const sp=P.span;
+  const rel=b=>{ const dx=b.pos.x-st.pos.x, dz=b.pos.z-st.pos.z; return [dx*fx+dz*fz, dx*nx+dz*nz, b.pos.y-st.pos.y]; };
+
+  // ---- 1. PACE
+  st.vPref = P.paceSpeed*(1+(st.drive||0))*(1 - P.fatigueSlow*st.fatigue);
+
+  // ---- 2. DRAFT: (re)choose whom to follow a few times a second -- the nearest bird ahead of me in
+  // a forward cone -- with hysteresis so I don't flicker between two similar choices.
+  const usable=(a,c,dy)=> a>0.6 && a<P.wakeRange && Math.abs(c) < 0.5*a + 3*sp && Math.abs(dy)<6;
+  let tgt = st.target!=null ? birds[st.target] : null;
+  if(tgt && !usable(...rel(tgt))){ tgt=null; st.target=null; }
+  st.lookT -= dt;
+  if(st.lookT<=0){
+    st.lookT = 0.3 + 0.2*Math.random();
+    let best=null, bd=Infinity;
+    for(const b of birds){
+      if(b===st || b.id===st.passing) continue;
+      const [a,c,dy]=rel(b); if(!usable(a,c,dy)) continue;
+      const d=Math.hypot(a,c); if(d<bd){ bd=d; best=b; }
+    }
+    if(best && best!==tgt){
+      const dCur = tgt ? Math.hypot(...rel(tgt).slice(0,2)) : Infinity;
+      if(bd < 0.8*dCur){ tgt=best; st.target=best.id; }
+    }
+  }
+
+  // ---- 5. PASS (decided before steering so it takes effect this step)
+  if(st.passing!=null){
+    const pb=birds[st.passing]; st.passingT+=dt;
+    if(!pb || rel(pb)[0] < -1.0 || st.passingT>20) st.passing=null;   // I'm past it (or gave up)
+  }
+  if(P.leadRotate && tgt && skimState==='cruise' && st.passing==null){
+    const slowBy = st.vPref - (tgt.gsS!=null?tgt.gsS:gs);
+    st.passT = slowBy > P.passMargin ? st.passT + dt : Math.max(0, st.passT - 2*dt);
+    if(st.passT > 3){                       // it's been too slow for me for a while: go around it
+      st.passing=tgt.id; st.passingT=0; st.passT=0;
+      st.target=null; tgt=null; st.lookT=0;  // next tick I'll pick someone further up to follow, if anyone
+    }
+  } else st.passT=0;
+  const lead = !tgt;
+
+  // ---- heading: a bird with nobody ahead follows the coast; a follower lines up with the bird it
+  // follows (blended with the coast it can also see). Banked, coordinated turns.
+  const psiTan = Math.atan(coastFollowSlope(st.pos.x));
+  if(lead){
+    const crossTrack = coastFollow(st.pos.x) - st.pos.z;      // >0 = need +z
+    const xt = clamp(0.05*crossTrack - 0.14*st.vel.z, -0.14, 0.14);
+    st.hdgCmd = psiTan + xt;
+  } else {
+    st.hdgCmd = psiTan + 0.5*wrapPi(Math.atan2(tgt.vel.z, tgt.vel.x) - psiTan);
+  }
+  st.bankCmd = clamp(1.3*wrapPi(st.hdgCmd - heading), -0.5, 0.5);
+
+  // ---- 3 & 4. LATERAL: seek better air, keep spacing
+  // What my wings feel: the difference in rising air across my span -- the wind itself (gusts,
+  // updrafts) plus the upwash from birds ahead -- and the slipstream's sideways slope, each weighed by
+  // what it's worth in effort (rising air tilts lift forward ~W*w/V; co-moving air cuts drag ~2*D*u/V
+  // with D ~ W/8 -- so per m/s, slipstream is worth ~1/4 of upwash). Leaders feel the air too.
+  const off=0.5*sp;
+  _sL.set(st.pos.x - nx*off, st.pos.y, st.pos.z - nz*off);
+  _sR.set(st.pos.x + nx*off, st.pos.y, st.pos.z + nz*off);
+  let feel = windAt(_sR).y - windAt(_sL).y;
+  if(P.draft) feel += (st.upR - st.upL) + 0.25*P.draftPull*(st.dfR - st.dfL);
+  let vlat = P.wakeSeek*feel;
+
+  // ---- 6. CLEAR VIEW: birds ahead of me (within a few lengths) on my -side and on my +side?
+  let aheadNeg=0, aheadPos=0;
+  if(tgt && P.clearView>0){
+    for(const b of birds){ if(b===st) continue; const [a,c]=rel(b);
+      if(a>0.5 && a<7){ if(c<-0.8 && c>-5) aheadNeg++; else if(c>0.8 && c<5) aheadPos++; } }
+  }
+  const boxed = aheadNeg>0 && aheadPos>0;
+  st.boxedT = boxed ? 1.0 : Math.max(0, (st.boxedT||0) - dt);   // keep going ~1 s after it opens up
+  if(boxed){
+    // head for the side with fewer birds; on a tie, keep going the way I already was
+    let nPos=0, nNeg=0;
+    for(const b of birds){ if(b===st) continue; const [a,c]=rel(b);
+      if(a>-2 && a<8 && Math.abs(c)<8 && Math.abs(c)>0.3){ if(c>0) nPos++; else nNeg++; } }
+    st.escDir = nPos<nNeg ? +1 : nNeg<nPos ? -1 : (st.escDir||(st.side||1));
+  }
+  const relocating = st.boxedT > 0;
+  if(relocating) vlat += P.clearView*st.escDir;
+  // a little individual wander -- sensing noise, gusts on the body -- so ties break and nothing is
+  // perfectly symmetric
+  st.wander += -0.5*st.wander*dt + 0.35*Math.sqrt(dt)*gauss();
+  vlat += 0.4*st.wander;
+  if(tgt){
+    // tether: slid clean out of the bird's wake (nothing left to feel)? drift back toward it
+    const c=rel(tgt)[1], reach=2.2*sp+1.0;
+    if(Math.abs(c)>reach) vlat += 0.4*(Math.abs(c)-reach)*Math.sign(c);
+    // follow: a gentle pull toward the line of the bird I'm following (I keep it in view dead ahead).
+    // Far weaker than the pull of the wake's upwash, so where there's a wake to ride it barely shows --
+    // but where the wake fades (skimming low over the water) it's the only thing left steering me.
+    vlat += P.pursuit*clamp(c, -2, 2);
+    st.side = c<0 ? +1 : -1;                                  // which side of the bird ahead I'm on
+  } else st.side=0;
+  for(const b of birds){                                      // don't overlap a bird alongside
+    if(b===st) continue;
+    const [a,c,dy]=rel(b), clear=2.1*sp+0.3;
+    if(Math.abs(a)<2.2 && Math.abs(c)<clear && Math.abs(dy)<2){
+      const s = Math.abs(c)>0.05 ? -Math.sign(c) : (st.id<b.id?-1:1);
+      vlat += s*1.6*(clear-Math.abs(c))*(1-Math.abs(a)/2.2);
+    }
+  }
+  vlat = clamp(vlat, -2.5, 2.5);
+  st.vzCmd = tgt ? tgt.vel.z + vlat*nz : (Math.abs(vlat)>0.05 ? st.vel.z + vlat*nz : null);
+
+  // ---- fore/aft: hold my follow distance behind the bird I chose, or (leading) fly my own pace
+  let gap, desiredGap, aheadV;
+  if(lead){
+    let dBehind=Infinity;
+    for(const b of birds){ if(b===st) continue; const [a,c]=rel(b); if(a<-0.3) dBehind=Math.min(dBehind, Math.hypot(a,c)); }
+    const wait = isFinite(dBehind) ? clamp(1 - 0.05*(dBehind - 2*P.followDist), 0.8, 1) : 1;
+    aheadV = st.vPref*wait; gap=0; desiredGap=0;
+  } else {
+    gap = rel(tgt)[0]; desiredGap = P.followDist + (relocating ? P.followDist : 0);   // ease back a rank to get past a neighbour
+    aheadV = tgt.gsS!=null ? tgt.gsS : Math.hypot(tgt.vel.x, tgt.vel.z);
+  }
+  T.gap = gap;
+
+  // DRAFT GATE: the slipstream's forward push fades as I close within minGap of the bird ahead, so
+  // riding its wake can't carry me straight through it. Plus an auto-flare when overrunning.
+  if(lead){ st.draftGate = 1; st.brake = 0; }
+  else {
+    const minGap=0.8;
+    st.draftGate = clamp((gap - minGap)/Math.max(desiredGap - minGap, 0.1), 0, 1);
+    const over = (desiredGap - gap)/Math.max(desiredGap - minGap, 0.1);
+    st.brake = clamp(0.9*over + 0.3*(st.gsS - aheadV), 0, 1);
+  }
+
+  // Height: the flock shares the base altitude of the skim cycle (the front bird's call), but each
+  // follower may sit a little above or below it -- drifting toward whichever height feels more upwash,
+  // and relaxing slowly back toward the flock's height. altFreedom = 0 keeps everyone level.
+  if(tgt && P.altFreedom>0 && P.draft){
+    st.altOff = (st.altOff||0) + dt*(P.wakeSeek*1.5*(st.upU - st.upD) - 0.05*(st.altOff||0));
+    // skimming, the freedom shrinks with height: right over the water, ground effect makes staying low pay
+    const fr = skimState==='cruise' ? P.altFreedom : Math.min(P.altFreedom, 0.3*flockBaseAlt);
+    st.altOff = clamp(st.altOff, skimState==='cruise' ? -fr : -0.1*flockBaseAlt, fr);
+  } else st.altOff = (st.altOff||0)*(1 - Math.min(1, dt/2));
+  const newAlt = flockBaseAlt + st.altOff;
+  // how fast the target height is moving (the dive / climb), so height-holding damps relative to it
+  st.targetVy = (st.targetAlt==null || dt<=0) ? 0 : 0.9*(st.targetVy||0) + 0.1*(newAlt - st.targetAlt)/dt;
+  st.targetAlt = newAlt;
+  // Learn the steady lift correction only while close to the target height: during a dive or climb the
+  // error is large and would wind it up, then drive the bird into the water when the dive levels out.
+  const hErr = newAlt - st.pos.y;
+  st.altTrim = clamp((st.altTrim||0) + dt*(Math.abs(hErr) < 0.4 ? 1.2*hErr : -0.2*(st.altTrim||0)), -2.5, 2.5);
+
+  if(P.flapStrategy==='intermittent'){
+    const line=st.targetAlt||P.startAlt;
+    // PD station-keeping: flap when behind OR falling behind; glide when on-station and speed-matched.
+    const demand = lead ? 1.6*(aheadV - st.gsS)
+                        : 1.0*(gap - desiredGap) + 1.3*(aheadV - st.gsS);
+    // a follower tolerates some slack in its spacing (chasing every gust-driven wobble would burn the
+    // very energy drafting saves); whoever is leading just tracks its own pace
+    const deadband = lead ? 0.25 : P.slack;
+    const slow     = st.aspS < 0.78*P.paceSpeed;              // stall safety (airspeed)
+    const floor    = clamp(line*0.5, 0.25, 2.5);
+    const absFloor = st.pos.y < floor;
+    const speedCap = lead ? 1.15*st.vPref : Math.max(1.25*P.paceSpeed, aheadV + 1.5);
+    const tooFast  = st.gsS > speedCap;
+    if((demand > deadband && !tooFast) || slow || absFloor){
+      st.flapping = true;
+      st.ampScale = clamp(0.3 + 0.42*demand + (slow?0.4:0) + (absFloor?0.5:0), 0.3, 1);
+    } else {
+      st.flapping = false; st.ampScale = 0;
+    }
+    T.coasting=!st.flapping;
+  } else {
+    st.flapping=true; st.ampScale=1; T.coasting=false;
+  }
+  // tired muscles can't drive a full beat (muscle mode gets this through muscleCapacity instead)
+  if(P.mode==='prescribed' && st.flapping) st.ampScale = Math.min(st.ampScale, 1 - 0.4*st.fatigue);
+  // Keep the wingtips out of the water: near the surface the downstroke can only reach so far before
+  // the tip touches, so the beat gets shallower the lower the bird flies (pelicans skimming the waves
+  // glide with level wings and give only short, shallow beats).
+  if(st.flapping){
+    const h = Math.min(st.pos.y, st.targetAlt==null ? st.pos.y : st.targetAlt);   // don't count on height I'm about to lose
+    const reach = Math.asin(clamp((h - P.tipClear)/P.span, -1, 1)) + P.dihedral*DEG;
+    st.tipCap = clamp(reach/Math.max(P.flapAmp*DEG, 1e-3), 0.12, 1);
+    st.ampScale = Math.min(st.ampScale, st.tipCap);
+  }
+  st.flapDuty=0.996*(st.flapDuty==null?1:st.flapDuty)+0.004*(st.flapping?1:0);
+  st.cmdRoll = 0;
+}
+
+/* ---------------------------------------------------- WINGTIP WAKES / DRAFT */
+// Two wake effects from the birds AHEAD, fed into a bird's local wind (st.wakeWind):
+//
+//  1. VERTICAL (wakeWind.y) -- wingtip vortices. A bird outboard of another's tip rides that
+//     wing's UPWASH (a lift bonus); between the tips it's downwash. Sampled at the middle of each
+//     half-wing and at the body, so a bird straddling a tip feels it unevenly -- and that left/right
+//     difference (upL/upR) is what it steers by.
+//
+//  2. HORIZONTAL (wakeWind.x/z) -- the reduced-drag SLIPSTREAM: the slug of co-moving air every
+//     bird drags behind it, along its own heading. A bird tucked in behind meets a lower relative
+//     headwind, so its drag drops; a leader's surge sweeps the channel back over the next bird.
+//
+// Both are laid out in the frame of the bird making the wake (behind = against ITS heading), so
+// they stay correct when the flock is turning along the coast.
+function computeWakes(){
+  const rho=P.rho, Vref=Math.max(P.paceSpeed,3), rc=Math.max(P.wakeCore,0.05);
+  const bprime=(Math.PI/4)*2*P.span, tipZ=P.span*0.9;
+  const L=P.mass*G, Gam=L/(rho*Vref*bprime);   // bound-circulation estimate (each bird ~ its weight)
+  const k=Gam/(2*Math.PI);
+  // The trailing vortices SINK behind a bird at roughly the far-field downwash, w ~ 2L/(rho V pi b'^2)
+  // (~0.5 m/s for a pelican), so a bird further back -- or a little higher -- sits above the worst of it.
+  const wSink = P.wakeSink ? 2*L/(rho*Vref*Math.PI*bprime*bprime) : 0;
+  const sw2=Math.max(P.slipWidth,0.2)**2, sld=Math.max(P.slipDecay,0.5);
+  for(const o of birds){ const h=Math.hypot(o.vel.x,o.vel.z)||1; o._hx=o.vel.x/h; o._hz=o.vel.z/h; }
+  const off=0.5*P.span;                         // sample point at the middle of each half-wing
+  const uS=[0,0,0,0,0], dS=[0,0,0];   // uS: -side, body, +side, body+0.3 m, body-0.3 m
+  for(const st of birds){
+    if(!st.wakeWind) st.wakeWind=V3();
+    st.wakeWind.set(0,0,0); st.tel.upwash=0; st.draftFactor=0; st.tel.draft=0;
+    st.upL=st.upR=st.upU=st.upD=st.dfL=st.dfR=0;
+    if(!P.draft) continue;
+    const nx=-st._hz, nz=st._hx;
+    uS.fill(0); dS.fill(0); let fdx=0, fdz=0;
+    for(const other of birds){
+      if(other===st) continue;
+      for(let s=0;s<5;s++){                     // 0 = my -side half-wing, 1 = body, 2 = my +side half-wing,
+        const lo=s<3 ? (s-1)*off : 0;           // 3/4 = just above / below my body (to feel which height is better)
+        const dy=st.pos.y + (s===3 ? 0.3 : s===4 ? -0.3 : 0) - other.pos.y;
+        const ddx=st.pos.x+nx*lo - other.pos.x, ddz=st.pos.z+nz*lo - other.pos.z;
+        const back=-(ddx*other._hx + ddz*other._hz);          // >0 : this point is behind 'other'
+        if(back<=0.05 || back>P.wakeRange) continue;
+        const lz=-ddx*other._hz + ddz*other._hx;             // sideways offset in other's frame
+        const decay=Math.exp(-back/Math.max(P.wakeDecay,1));
+        const sink=wSink*back/Vref;                          // how far the vortex pair has dropped by here
+        const dyV=dy + sink;                                 // to the (sunken) vortex
+        const dyI=dy + 2*other.pos.y - sink;                 // to its mirror image below the sea surface
+        for(const sg of [+1,-1]){                            // the two wingtips of 'other'
+          const dz=lz - sg*tipZ;
+          uS[s] += sg*k*dz/(dz*dz + dyV*dyV + rc*rc)*decay;  // outboard of a tip = upwash
+          // GROUND EFFECT ON THE WAKE: near the water each tip vortex has an opposite-signed image vortex,
+          // which cancels much of the upwash beside it. Skimming low, there's little V niche left to find.
+          if(P.groundEffect) uS[s] -= sg*k*dz/(dz*dz + dyI*dyI + rc*rc)*decay;
+        }
+        if(s>2) continue;
+        const wake=Math.exp(-(lz*lz + dy*dy)/sw2)*Math.exp(-back/sld);
+        if(wake>dS[s]){ dS[s]=wake; if(s===1){ fdx=other._hx; fdz=other._hz; } }   // ride the deepest one
+      }
+    }
+    // Clamp the downwash side hard (a mispositioned bird shouldn't get slammed down out of the flock)
+    // while letting the upwash benefit be strong.
+    st.wakeWind.y = clamp(P.draftStrength*(uS[0]+uS[1]+uS[2])/3, -0.4, 3.5);
+    st.upL = clamp(P.draftStrength*uS[0], -3, 3.5);
+    st.upR = clamp(P.draftStrength*uS[2], -3, 3.5);
+    st.upU = clamp(P.draftStrength*uS[3], -3, 3.5);
+    st.upD = clamp(P.draftStrength*uS[4], -3, 3.5);
+    st.tel.upwash = st.wakeWind.y;
+    const df=clamp(dS[1],0,1); st.draftFactor=df; st.tel.draft=df;
+    st.dfL=dS[0]; st.dfR=dS[2];
+    st.wakeWind.x = P.draftPull*df*fdx;
+    st.wakeWind.z = P.draftPull*df*fdz;
+  }
+}
+
+/* ---------------------------------------------------- SURFACE-SKIM CYCLE (lead's call) */
+// Real pelicans working the surf line drop down and hydroplane just over the water in ground
+// effect -- scanning for fish -- then climb back to cruise. It's the LEAD's decision and the whole
+// flock follows, so this drives ONE shared base altitude (flockBaseAlt) that every bird holds its
+// slot at. cruise (up high) -> descend -> skim (ride the surface for skimDuration) -> ascend. The
+// birds don't jockey for position until the full dip-and-rise completes (see PASS in flockControl).
+function updateSkim(dt){
+  const cruiseA=P.startAlt, rate=2.2;      // gentle ~2 m/s climb/descent of the shared base altitude
+  if(!P.skimEnable){ skimState='cruise'; flockBaseAlt += (cruiseA-flockBaseAlt)*Math.min(1,dt*1.5); return; }
+  if(skimState==='cruise'){
+    flockBaseAlt += (cruiseA-flockBaseAlt)*Math.min(1,dt*1.2);
+    skimCountdown -= dt;
+    if(skimCountdown<=0){ skimState='descend';                 // lock the coast heading for the dip -> fly straight along the surf
+      skimFreezeX = birds.length?birds[order[0]].pos.x:0;
+      skimFreezeHdg = Math.atan(coastFollowSlope(skimFreezeX)); }
+  } else if(skimState==='descend'){
+    // glide down at ~2 m/s, then flatten out over the last few metres instead of stopping abruptly
+    flockBaseAlt = Math.max(P.skimAlt, flockBaseAlt - Math.min(rate, 0.2 + 0.6*(flockBaseAlt - P.skimAlt))*dt);
+    if(flockBaseAlt <= P.skimAlt+0.05){ skimState='skim'; skimHold=P.skimDuration; }
+  } else if(skimState==='skim'){
+    flockBaseAlt += (P.skimAlt-flockBaseAlt)*Math.min(1,dt*1.5);
+    // only start counting the skim once the flock has actually reached the surface (the glide down
+    // is rate-limited), so we always get a full skimDuration of real hydroplaning near the water.
+    const lead=birds.length?birds[order[0]]:null;
+    const arrived = !lead || lead.pos.y < P.skimAlt+1.4;
+    if(arrived) skimHold -= dt;
+    if(skimHold<=0) skimState='ascend';
+  } else { // ascend
+    flockBaseAlt = Math.min(cruiseA, flockBaseAlt + rate*dt);
+    if(flockBaseAlt >= cruiseA-0.1){ skimState='cruise'; skimCountdown = P.skimPeriod*(0.6+Math.random()*0.8); }
+  }
+}
+
+/* ---------------------------------------------------- STEP THE WHOLE FLOCK */
+function stepFlock(dt){
+  windT += dt;                             // advances the gust field
+  updateSkim(dt);                          // advance the shared dip/rise altitude
+  computeWakes();
+  for(const st of birds) flockControl(st, dt);
+  for(const st of birds) stepBird(st, dt);
+  describeT -= dt;
+  if(describeT<=0){ describeT=0.1; describeFlock(); }
+}
+// back-compat single entry point (render loop + headless tests call this)
+function integrate(dt){ stepFlock(dt); }
+
+function stepBody(st, f, dt){
+  // translational
+  const acc=f.netWorld.clone().multiplyScalar(1/P.mass);
+  st.vel.addScaledVector(acc, dt);
+  st.pos.addScaledVector(st.vel, dt);
+  // rotational (body frame Euler)
+  const I=derived.I, w=st.omega, T=f.torqueBody;
+  const gyro=V3((I.z-I.y)*w.y*w.z,(I.x-I.z)*w.z*w.x,(I.y-I.x)*w.x*w.y);
+  const aa=V3((T.x-gyro.x)/I.x,(T.y-gyro.y)/I.y,(T.z-gyro.z)/I.z);
+  w.addScaledVector(aa, dt);
+  w.multiplyScalar(0.998);   // mild blanket angular-rate damping
+  // integrate quaternion from body angular velocity
+  const wq=new THREE.Quaternion(w.x*dt*0.5, w.y*dt*0.5, w.z*dt*0.5, 1);
+  st.quat.multiply(wq).normalize();
+  // KINEMATIC ROLL CONTROL: a bird actively holds a target bank; model it as gently rotating the
+  // body-up toward that target each step. Target is world-up BANKED by st.bankCmd about the flight
+  // direction -> wings level when flying straight, banked into coast turns. Robustly damps the slow
+  // sideslip-fed roll/Dutch-roll mode the torque loop alone leaves marginal -- without touching lift.
+  if(P.stab>0){
+    const fwd=_lvF.set(1,0,0).applyQuaternion(st.quat);
+    const up =_lvU.set(0,1,0).applyQuaternion(st.quat);
+    const dUp=_lvD.set(0,1,0).addScaledVector(fwd,-fwd.y);   // world-up made perpendicular to fwd
+    if(st.bankCmd) dUp.applyAxisAngle(fwd, st.bankCmd);      // ...then banked into the turn
+    if(dUp.lengthSq()>1e-6){
+      dUp.normalize(); up.normalize();
+      _lvQ.setFromUnitVectors(up, dUp);                       // roll correction toward the target bank
+      _lvI.identity().slerp(_lvQ, clamp(0.12*P.stab,0,0.5));  // apply a fraction each substep
+      st.quat.premultiply(_lvI).normalize();
+      st.omega.x *= 0.90;                                     // bleed roll rate to match
+    }
+  }
+  // ground / water contact
+  const minY=0.14;
+  if(st.pos.y<minY){
+    st.pos.y=minY;
+    if(st.vel.y<0) st.vel.y*=-0.15;    // soft bounce off water
+    st.vel.x*=0.995; st.vel.z*=0.995;
+    st.landed=true;
+  } else st.landed=false;
+}
+
+/* ============================================================ UI =========== */
+const SCHEMA=[
+ {title:'Presets & mode', open:true, custom:'presets'},
+ {title:'Flock & drafting', open:true, items:[
+   {k:'nBirds',label:'Number of birds',min:1,max:30,step:1,unit:'',hint:'rebuilds the flock in its starting arrangement'},
+   {k:'slotDx',label:'Start spacing — along',min:1,max:5,step:0.1,unit:'m',hint:'only lays out the starting flock; after that each bird finds its own place'},
+   {k:'slotDz',label:'Start spacing — across',min:0.6,max:4,step:0.1,unit:'m',hint:'only lays out the starting flock'},
+   {k:'altFreedom',label:'Height freedom',min:0,max:3,step:0.1,unit:'m',hint:'how far above or below the flock a follower may settle, seeking the height with the most upwash. 0 = everyone flies level'},
+   {k:'clearView',label:'Keep a clear view',min:0,max:2,step:0.05,unit:'m/s',hint:'a bird with others ahead on BOTH sides drifts toward the open side and eases back. 0 = birds stay boxed in and the flock fills in as a diamond'},
+   {k:'pursuit',label:'Follow the bird ahead',min:0,max:0.6,step:0.05,unit:'/s',hint:'a gentle sideways pull toward the line of the bird I follow. Weak next to the wake, so V\'s and echelons still win up high; skimming low with loose spacing (the water cancels the wake) it lines birds up into strings. 0 = v15 behaviour'},
+   {k:'wakeSeek',label:'Wake seeking',min:0,max:2,step:0.05,unit:'×',hint:'how readily a bird slides toward the wing that feels more lift. 0 = it stays wherever it is'},
+   {k:'draftStrength',label:'Draft upwash strength',min:0,max:4,step:0.1,unit:'×',hint:'lift bonus a bird gets in the wake ahead'},
+   {k:'draftPull',label:'Slipstream pull',min:0,max:8,step:0.1,unit:'m/s',hint:'co-moving air in the wake — reduces a follower’s drag and couples the line (the "rubber band")'},
+   {k:'slipWidth',label:'Slipstream width',min:0.6,max:4,step:0.1,unit:'m',hint:'how far off to the side the low-drag channel reaches'},
+   {k:'slipDecay',label:'Slipstream length',min:2,max:20,step:0.5,unit:'m',hint:'how far downstream the low-drag channel persists'},
+   {k:'wakeRange',label:'Wake reach',min:5,max:60,step:1,unit:'m'},
+   {k:'wakeDecay',label:'Wake decay length',min:4,max:40,step:1,unit:'m',hint:'how far downstream the vortex upwash persists'},
+   {k:'wakeCore',label:'Vortex core radius',min:0.1,max:1,step:0.05,unit:'m',hint:'smaller = a sharper, stronger upwash peak'},
+ ]},
+ {title:'Fatigue & leadership', open:true, items:[
+   {k:'sustainPower',label:'Sustainable flap power',min:20,max:120,step:1,unit:'W',hint:'flying harder than this builds fatigue; easier than this recovers it'},
+   {k:'fatigueTime',label:'Fatigue time scale',min:5,max:200,step:1,unit:'s',hint:'how quickly fatigue builds and recovers'},
+   {k:'fatigueSlow',label:'Tired birds slow down',min:0,max:0.6,step:0.01,unit:'',hint:'how much a fully tired bird lowers its preferred pace'},
+   {k:'passMargin',label:'Passing impatience',min:0.1,max:3,step:0.05,unit:'m/s',hint:'how much slower than my own pace the bird ahead must fly before I go around it'},
+   {k:'individuality',label:'Individual variation',min:0,max:0.3,step:0.01,unit:'',hint:'spread of fitness and preferred pace between birds (applies on restart)'},
+ ]},
+ {title:'Mass & skeleton', open:true, items:[
+   {k:'mass',label:'Total mass',min:0.01,max:12,step:0.01,unit:'kg'},
+   {k:'boneThickness',label:'Bone thickness',min:0.3,max:3,step:0.05,unit:'×',hint:'heavier, higher-inertia wings'},
+   {k:'wingMassFrac',label:'Wing mass fraction',min:0.05,max:0.3,step:0.005,unit:''},
+   {k:'headMassFrac',label:'Head mass',min:0,max:0.25,step:0.005,unit:'',hint:'more head mass = COM forward = steadier'},
+   {k:'neckLen',label:'Neck / head reach',min:0.03,max:0.7,step:0.01,unit:'m'},
+   {k:'tailMassFrac',label:'Tail mass',min:0,max:0.15,step:0.005,unit:''},
+ ]},
+ {title:'Wing geometry', open:true, items:[
+   {k:'span',label:'Wing length (each)',min:0.05,max:1.5,step:0.01,unit:'m'},
+   {k:'innerFrac',label:'Inner (arm) fraction',min:0.2,max:0.7,step:0.02,unit:'',hint:'humerus vs forearm/hand split — where the elbow sits'},
+   {k:'rootChord',label:'Root chord',min:0.02,max:0.5,step:0.005,unit:'m'},
+   {k:'taper',label:'Taper (tip/root)',min:0.1,max:1,step:0.02,unit:''},
+   {k:'sweep',label:'Sweep',min:-10,max:35,step:1,unit:'°'},
+   {k:'dihedral',label:'Dihedral',min:-5,max:25,step:1,unit:'°'},
+   {k:'innerAoA',label:'Inner-wing angle of attack',min:-4,max:16,step:0.5,unit:'°'},
+   {k:'outerAoA',label:'Outer-wing angle of attack',min:-6,max:14,step:0.5,unit:'°',hint:'the hand-wing; usually washed out below the arm'},
+   {k:'tipSpread',label:'Wingtip feather spread',min:0,max:1,step:0.05,unit:'',hint:'primaries: low = winglet, high = airbrake. Auto-spreads while coasting'},
+ ]},
+ {title:'Flapping, fold & thrust', open:true, items:[
+   {k:'flapFreq',label:'Flap frequency',min:0,max:12,step:0.1,unit:'Hz'},
+   {k:'flapAmp',label:'Flap amplitude',min:0,max:70,step:1,unit:'°'},
+   {k:'upDownAsym',label:'Down/up asymmetry',min:-0.6,max:0.6,step:0.02,unit:''},
+   {k:'foldAmount',label:'Upstroke wing fold',min:0,max:1,step:0.02,unit:'',hint:'flex the elbow on the upstroke. 0 = rigid wing (costly upstroke)'},
+   {k:'maxFoldDeg',label:'Full-fold angle',min:0,max:110,step:2,unit:'°'},
+   {k:'featherAmp',label:'Feather (pitch ∝ flap rate)',min:0,max:45,step:1,unit:'°',hint:'nose-down destall on downstroke — trades lift for thrust'},
+ ]},
+ {title:'Coasting & drafting', open:true, items:[
+   {k:'paceSpeed',label:'Flock pace speed',min:5,max:25,step:0.5,unit:'m/s',hint:'the leader/flock cruise the bird keeps station with'},
+   {k:'slack',label:'Station-keeping slack',min:0.1,max:3,step:0.05,unit:'',hint:'how much spacing error a follower tolerates before flapping to correct — tight costs energy'},
+   {k:'followDist',label:'Target follow distance',min:1,max:12,step:0.5,unit:'m',hint:'the even gap each bird holds behind the one ahead'},
+   {k:'coastBeta',label:'Coast wing angle',min:-10,max:20,step:1,unit:'°',hint:'dihedral the wing holds while gliding'},
+ ]},
+ {title:'Shoreline & surface skims', open:false, items:[
+   {k:'skimAlt',label:'Skim altitude',min:0.4,max:6,step:0.1,unit:'m',hint:'how low the flock drops to hydroplane in ground effect. Try 0.5 m with a looser follow distance to see strings form'},
+   {k:'skimPeriod',label:'Time between skims',min:8,max:90,step:1,unit:'s',hint:'average cruise time before the lead dips to the surface'},
+   {k:'skimDuration',label:'Skim duration',min:2,max:20,step:1,unit:'s',hint:'how long the flock rides just over the water'},
+   {k:'tipClear',label:'Wingtip clearance',min:0.05,max:0.5,step:0.05,unit:'m',hint:'near the surface the wingbeat gets shallower so the downstroke stops this far above the water'},
+ ]},
+ {title:'Muscle model (dynamic mode)', open:false, items:[
+   {k:'muscleStrength',label:'Muscle strength',min:0.2,max:3,step:0.05,unit:'×',hint:'too low and the muscles saturate — the wingbeat falls short and it sinks'},
+   {k:'momentArm',label:'Attachment moment arm',min:0.005,max:0.06,step:0.001,unit:'m',hint:'lever arm of the muscle at the shoulder'},
+   {k:'muscleOptBeta',label:'Optimal wing angle',min:-40,max:20,step:1,unit:'°',hint:'length-tension peak (most force here)'},
+   {k:'muscleWidth',label:'Length-tension width',min:15,max:120,step:5,unit:'°'},
+   {k:'vmax',label:'Force-velocity Vmax',min:6,max:70,step:1,unit:'rad/s',hint:'faster shortening = less force'},
+   {k:'elevatorFrac',label:'Elevator/depressor ratio',min:0.2,max:1.2,step:0.05,unit:'',hint:'upstroke muscle is normally the weaker one'},
+ ]},
+ {title:'Stabilizers & control', open:false, items:[
+   {k:'stab',label:'Active stabilization (reflex)',min:0,max:2,step:0.05,unit:'×',hint:'bird tail/head reflexes. 0 = raw open-loop (phugoid, upsets)'},
+   {k:'trimPitch',label:'Trim pitch target',min:-6,max:12,step:0.5,unit:'°'},
+   {k:'tailArea',label:'Tail area',min:0,max:0.15,step:0.002,unit:'m²'},
+   {k:'tailIncidence',label:'Tail incidence',min:-10,max:10,step:0.5,unit:'°'},
+   {k:'angDamp',label:'Passive airframe damping',min:0,max:3,step:0.05,unit:''},
+   {k:'clAlpha',label:'Lift-curve slope',min:3,max:7,step:0.1,unit:'/rad'},
+   {k:'stallDeg',label:'Stall angle',min:8,max:24,step:1,unit:'°'},
+   {k:'cd0',label:'Profile drag',min:0.005,max:0.1,step:0.005,unit:''},
+   {k:'bodyCd',label:'Body drag coeff',min:0.1,max:1.2,step:0.05,unit:''},
+ ]},
+ {title:'Wind & air', open:false, items:[
+   {k:'headwind',label:'Headwind',min:-15,max:20,step:0.5,unit:'m/s',hint:'+ opposes flight, raises airspeed & lift'},
+   {k:'crosswind',label:'Crosswind',min:-15,max:15,step:0.5,unit:'m/s'},
+   {k:'updraft',label:'Updraft',min:-5,max:8,step:0.5,unit:'m/s'},
+   {k:'turbulence',label:'Turbulence / gusts',min:0,max:4,step:0.1,unit:'',hint:'0 = steady air (best for tuning); higher = shifting gusts the flock must adapt to. Above ~1.5 drafting stops paying, so fatigue no longer drives who leads'},
+   {k:'rho',label:'Air density',min:0.6,max:1.4,step:0.02,unit:'kg/m³'},
+   {k:'geStrength',label:'Ground-effect strength',min:0,max:2,step:0.05,unit:'×'},
+ ]},
+ {title:'Launch & sim', open:false, items:[
+   {k:'launchSpeed',label:'Launch speed',min:0,max:30,step:0.5,unit:'m/s',reset:true},
+   {k:'launchAngle',label:'Launch angle',min:-20,max:30,step:1,unit:'°',reset:true},
+   {k:'startAlt',label:'Start altitude',min:0.5,max:80,step:0.5,unit:'m',reset:true},
+   {k:'timeScale',label:'Time scale',min:0.1,max:2,step:0.05,unit:'×'},
+ ]},
+];
+
+const secHost=document.getElementById('secHost');
+function buildUI(){
+  secHost.innerHTML='';
+  for(const sec of SCHEMA){
+    const d=document.createElement('details'); if(sec.open) d.open=true;
+    const s=document.createElement('summary'); s.textContent=sec.title; d.appendChild(s);
+    const body=document.createElement('div'); body.className='sec'; d.appendChild(body);
+    if(sec.custom==='presets'){ buildPresetSection(body); }
+    else for(const it of sec.items){ body.appendChild(mkCtl(it)); }
+    secHost.appendChild(d);
+  }
+}
+function fmt(v){ return Math.abs(v)>=100 || (Math.abs(v)>=10 && Number.isInteger(v))? v.toFixed(0) : Math.abs(v)>=10? v.toFixed(1): v.toFixed(3).replace(/0+$/,'').replace(/\.$/,''); }
+function mkCtl(it){
+  const div=document.createElement('div'); div.className='ctl';
+  const lab=document.createElement('label');
+  const name=document.createElement('span'); name.textContent=it.label;
+  const val=document.createElement('b'); val.textContent=fmt(P[it.k])+(it.unit?(' '+it.unit):'');
+  lab.appendChild(name); lab.appendChild(val); div.appendChild(lab);
+  const inp=document.createElement('input'); inp.type='range'; inp.min=it.min; inp.max=it.max; inp.step=it.step; inp.value=P[it.k];
+  inp.addEventListener('input',()=>{
+    P[it.k]=parseFloat(inp.value);
+    val.textContent=fmt(P[it.k])+(it.unit?(' '+it.unit):'');
+    recomputeDerived();
+    if(it.k==='nBirds'){ resetState(); }   // add/remove birds -> rebuild the flock
+    else if(['span','rootChord','taper','sweep','neckLen','tailArea','tailLen','innerFrac'].includes(it.k)) buildBird();
+    if(it.reset){ /* launch params only take effect on reset */ }
+    markPresetCustom();
+  });
+  inp.dataset.k=it.k; div.appendChild(inp);
+  if(it.hint){ const h=document.createElement('div'); h.className='hint'; h.style.margin='2px 0 0'; h.textContent=it.hint; div.appendChild(h); }
+  return div;
+}
+function buildPresetSection(host){
+  const chips=document.createElement('div'); chips.className='chips'; chips.id='presetChips';
+  for(const name of Object.keys(PRESETS)){
+    const c=document.createElement('div'); c.className='chip'+(name===currentPreset?' on':''); c.textContent=name; c.dataset.p=name;
+    c.onclick=()=>applyPreset(name); chips.appendChild(c);
+  }
+  host.appendChild(chips);
+
+  const row=document.createElement('div'); row.className='row'; row.style.marginTop='10px';
+  const modeWrap=document.createElement('div');
+  const ml=document.createElement('label'); ml.className='ctl'; ml.style.margin='0';
+  ml.innerHTML='<span style="color:var(--dim);font-size:11.5px">Propulsion mode</span>';
+  const sel=document.createElement('select');
+  sel.innerHTML='<option value="prescribed">Prescribed kinematics</option><option value="muscle">Dynamic muscle-driven</option>';
+  sel.value=P.mode; sel.onchange=()=>{
+    P.mode=sel.value;
+    // starting the muscle oscillator cleanly (without moving the birds) so it engages
+    if(P.mode==='muscle'){ for(const st of birds){ st.phase=Math.random()*6.283; st.beta=0; st.betaDot=0; } }
+    recomputeDerived();
+  };
+  modeWrap.appendChild(ml); modeWrap.appendChild(sel); row.appendChild(modeWrap);
+  host.appendChild(row);
+
+  // flight strategy: continuous flapping vs intermittent flap-coast
+  const stratWrap=document.createElement('div'); stratWrap.style.marginTop='10px';
+  const sl=document.createElement('label'); sl.className='ctl'; sl.style.margin='0';
+  sl.innerHTML='<span style="color:var(--dim);font-size:11.5px">Flight strategy</span>';
+  const ssel=document.createElement('select');
+  ssel.innerHTML='<option value="continuous">Continuous flapping</option><option value="intermittent">Flap–coast (intermittent)</option>';
+  ssel.value=P.flapStrategy; ssel.onchange=()=>{
+    P.flapStrategy=ssel.value;
+    for(const st of birds){ st.leadX=st.pos.x+P.followDist; st.targetAlt=st.pos.y; st.flapping=true; st.flapDuty=1; st.phaseT=0; }
+  };
+  stratWrap.appendChild(sl); stratWrap.appendChild(ssel); host.appendChild(stratWrap);
+
+  // starting arrangement (only the start -- the birds organize themselves from there)
+  const fWrap=document.createElement('div'); fWrap.style.marginTop='10px';
+  const fl=document.createElement('label'); fl.className='ctl'; fl.style.margin='0';
+  fl.innerHTML='<span style="color:var(--dim);font-size:11.5px">Starting arrangement</span>';
+  const fsel=document.createElement('select');
+  fsel.innerHTML='<option value="cluster">Loose random cluster</option><option value="V">Symmetric V</option><option value="line">Single file</option>';
+  fsel.value=P.startFormation; fsel.onchange=()=>{ P.startFormation=fsel.value; resetState(); };
+  fWrap.appendChild(fl); fWrap.appendChild(fsel); host.appendChild(fWrap);
+
+  const tg=document.createElement('div'); tg.style.marginTop='10px';
+  const toggles=[['vForces','Force vectors'],['vFlow','Airflow'],['vTrail','Wingtip wakes'],
+                 ['vWind','Wind vectors (green=up, red=down)'],['draft','Drafting upwash'],['leadRotate','Fatigue-driven passing (emergent lead changes)'],
+                 ['wakeSink','Wakes sink behind each bird'],['skimEnable','Surface skims (ground-effect fishing)']];
+  for(const [k,lb] of toggles){
+    const t=document.createElement('label'); t.className='toggle';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!P[k];
+    cb.onchange=()=>{P[k]=cb.checked?1:0; if(k==='vFlow'&&flow) flow.visible=cb.checked;
+      if(k==='vTrail'){ for(const st of birds){ if(st.mesh){ st.mesh.trailR.visible=cb.checked; st.mesh.trailL.visible=cb.checked; } } }};
+    t.appendChild(cb); t.appendChild(document.createTextNode(lb)); tg.appendChild(t);
+  }
+  host.appendChild(tg);
+}
+function markPresetCustom(){
+  currentPreset='Custom';
+  document.querySelectorAll('#presetChips .chip').forEach(c=>c.classList.remove('on'));
+}
+function applyPreset(name){
+  currentPreset=name;
+  P.headwind=0; P.crosswind=0; P.updraft=0;   // presets start from calm air
+  Object.assign(P, PRESETS[name]);
+  document.querySelectorAll('#presetChips .chip').forEach(c=>c.classList.toggle('on', c.dataset.p===name));
+  // refresh sliders
+  document.querySelectorAll('#secHost input[type=range]').forEach(inp=>{
+    const k=inp.dataset.k; if(k in P){ inp.value=P[k]; const b=inp.parentElement.querySelector('b');
+      const it=findItem(k); if(b) b.textContent=fmt(P[k])+(it&&it.unit?(' '+it.unit):''); }
+  });
+  recomputeDerived(); buildBird(); resetState();
+}
+function findItem(k){ for(const s of SCHEMA) if(s.items) for(const it of s.items) if(it.k===k) return it; return null; }
+
+/* ---------- HUD ---------- */
+const statGrid=document.getElementById('statGrid');
+const STATS=[
+  ['airspeed','Airspeed','m/s'],['alt','Altitude','m'],
+  ['vspeed','Climb rate','m/s'],['aoa','Angle of attack','°'],
+  ['ld','Glide ratio L/D',''],['power','Flap power','W'],
+  ['fold','Wing fold','°'],['flapamp','Flap amplitude','°'],
+  ['gap','Following gap','m'],['duty','Flap duty','%'],
+  ['upwash','Wake upwash','m/s'],['bird','Focus bird',''],
+  ['fatigue','Fatigue','%'],['vpref','Preferred pace','m/s'],
+];
+function buildHUD(){
+  statGrid.innerHTML='';
+  for(const [id,k,u] of STATS){
+    const d=document.createElement('div'); d.className='stat';
+    d.innerHTML=`<span class="k">${k}</span><span class="v" id="st_${id}">–<span class="u"> ${u}</span></span>`;
+    statGrid.appendChild(d);
+  }
+  const bars=document.getElementById('forceBars'); bars.innerHTML='';
+  for(const [id,lab,col] of [['lift','Lift','var(--lift)'],['thrust','Thrust','var(--thrust)'],['drag','Drag','var(--drag)'],['weight','Weight','var(--weight)']]){
+    const b=document.createElement('div'); b.className='bar';
+    b.innerHTML=`<span class="lab">${lab}</span><span class="track"><span class="fill" id="bar_${id}" style="background:${col}"></span></span><span class="val" id="barv_${id}">–</span>`;
+    bars.appendChild(b);
+  }
+}
+function setStat(id,v){ const e=document.getElementById('st_'+id); if(e){ const u=e.querySelector('.u'); e.textContent=v; if(u) e.appendChild(u);} }
+// light smoothing for jittery status readouts (forces oscillate every wingbeat)
+const SMV={};
+function ema(k,v,a){ a=a||0.1; SMV[k]=(SMV[k]==null)?v:SMV[k]+(v-SMV[k])*a; return SMV[k]; }
+
+/* ---------- charts ---------- */
+const chartCanvas=document.getElementById('chartCanvas'), cctx=chartCanvas.getContext('2d');
+let chartData=[]; const CHART_N=240;
+function drawChart(){
+  const w=chartCanvas.width=chartCanvas.clientWidth*devicePixelRatio;
+  const h=chartCanvas.height=chartCanvas.clientHeight*devicePixelRatio;
+  cctx.clearRect(0,0,w,h);
+  cctx.strokeStyle='#22303f'; cctx.lineWidth=1;
+  for(let i=0;i<4;i++){const y=h*i/4; cctx.beginPath();cctx.moveTo(0,y);cctx.lineTo(w,y);cctx.stroke();}
+  if(chartData.length<2) return;
+  const W=P.mass*G;
+  const maxF=Math.max(W*2.2, ...chartData.map(d=>Math.max(Math.abs(d.lift),Math.abs(d.thrust),W)));
+  const maxA=Math.max(...chartData.map(d=>d.alt),5);
+  const plot=(key,col,mx)=>{
+    cctx.strokeStyle=col; cctx.lineWidth=2*devicePixelRatio; cctx.beginPath();
+    chartData.forEach((d,i)=>{const x=w*i/(CHART_N-1); const y=h-(clamp(d[key],-mx,mx)/mx*0.5+0.5)*h;
+      i?cctx.lineTo(x,y):cctx.moveTo(x,y);});
+    cctx.stroke();
+  };
+  // weight line
+  cctx.strokeStyle='#9aa7ff'; cctx.setLineDash([4,4]); cctx.lineWidth=1.5*devicePixelRatio;
+  const wy=h-(W/maxF*0.5+0.5)*h; cctx.beginPath();cctx.moveTo(0,wy);cctx.lineTo(w,wy);cctx.stroke(); cctx.setLineDash([]);
+  plot('lift','#4bd6c9',maxF);
+  plot('thrust','#ffb454',maxF);
+  // altitude on its own scale
+  cctx.strokeStyle='#7fd1ff'; cctx.lineWidth=1.5*devicePixelRatio; cctx.beginPath();
+  chartData.forEach((d,i)=>{const x=w*i/(CHART_N-1); const y=h-(d.alt/maxA)*h*0.96-2; i?cctx.lineTo(x,y):cctx.moveTo(x,y);});
+  cctx.stroke();
+}
+
+/* ============================================================ CAMERA ======= */
+// pov = -1: normal orbit/follow. pov = i>=0: ride bird i (a "bird's-eye view"), keys 1-9 pick the
+// bird, 0 returns to orbit.
+const cam={az:-2.3, el:0.28, dist:6.5, follow:true, target:V3(0,20,0), pov:-1, povYaw:0, povPitch:0, ots:-1, otsYaw:0, otsPitch:0};
+const _oF=V3(), _oR=V3(), _oE=V3(), _oL=V3(), _oD=V3(), _oRt=V3();
+const BASE_FOV=55, POV_FOV=82;
+const povTagEl=document.getElementById('povTag'), leadTintEl=document.getElementById('leadTint');
+const _pF=V3(), _pU=V3(), _pE=V3(), _wUp=V3(0,1,0), _pR=V3(), _pDir=V3();
+const _qy=new THREE.Quaternion(), _qp=new THREE.Quaternion();
+let dragging=false, px=0, py=0;
+renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;px=e.clientX;py=e.clientY;});
+addEventListener('pointerup',()=>dragging=false);
+addEventListener('pointermove',e=>{ if(!dragging)return; const dxp=e.clientX-px, dyp=e.clientY-py; px=e.clientX;py=e.clientY;
+  if(cam.pov>=0){ // riding a bird: drag looks AROUND (yaw/pitch off the bird's heading)
+    cam.povYaw   = clamp(cam.povYaw   - dxp*0.006, -2.7, 2.7);   // up to ~155deg each way -> see the whole flock
+    cam.povPitch = clamp(cam.povPitch - dyp*0.006, -1.1, 1.1);
+  } else if(cam.ots>=0){ // over-the-shoulder: drag looks AROUND from the chase position
+    cam.otsYaw   = clamp(cam.otsYaw   - dxp*0.006, -2.7, 2.7);
+    cam.otsPitch = clamp(cam.otsPitch - dyp*0.006, -1.1, 1.1);
+  } else { cam.az-=dxp*0.006; cam.el=clamp(cam.el+dyp*0.006,-1.3,1.3); }
+});
+renderer.domElement.addEventListener('wheel',e=>{e.preventDefault(); cam.dist=clamp(cam.dist*(1+Math.sign(e.deltaY)*0.1),1.5,120);},{passive:false});
+// Scroll the water/grid/sky with the bird so the world is effectively infinite -- the
+// bird never flies off the edge of the ground plane. The grid snaps to its cell size so
+// its lines appear to stream past (a motion cue) instead of sliding with the bird.
+function updateWorld(){
+  if(!state) return;
+  const p=state.pos;
+  water.position.set(p.x, 0, p.z);
+  waterMat.uniforms.uTime.value = performance.now()*0.001;   // roll the swell
+  skyMesh.position.set(p.x, 0, p.z);
+  terrainGroup.position.x = Math.round(p.x/TERR_PERIOD)*TERR_PERIOD;   // seamless endless coast
+}
+function updateCamera(){
+  // ---- bird's-eye view: ride on the chosen bird's head; drag to look around at the rest of the flock ----
+  if(cam.pov>=0 && birds[cam.pov]){
+    const st=birds[cam.pov];
+    const fwd=_pF.set(1,0,0).applyQuaternion(st.quat);
+    const up =_pU.set(0,1,0).applyQuaternion(st.quat);
+    // eye at the head (a touch forward of the COM and just above it)
+    _pE.copy(st.pos).addScaledVector(fwd, Math.max(P.neckLen*1.15,0.22)).addScaledVector(up,0.05);
+    camera.position.copy(_pE);
+    up.lerp(_wUp,0.45).normalize(); camera.up.copy(up);   // keep horizon readable through banks
+    // look direction = heading, turned by the drag-controlled yaw (about world-up) then pitch (about right)
+    _pDir.copy(fwd);
+    _qy.setFromAxisAngle(_wUp, cam.povYaw); _pDir.applyQuaternion(_qy);
+    _pR.crossVectors(_pDir,_wUp).normalize();
+    _qp.setFromAxisAngle(_pR, cam.povPitch); _pDir.applyQuaternion(_qp);
+    camera.lookAt(_pE.x+_pDir.x*40, _pE.y+_pDir.y*40, _pE.z+_pDir.z*40);
+    if(camera.fov!==POV_FOV){ camera.fov=POV_FOV; camera.updateProjectionMatrix(); }
+    // which bird am I inhabiting? tag it, and tint the world blue when it's the lead
+    const isLead = (cam.pov===order[0]);
+    povTagEl.style.display='block';
+    povTagEl.innerHTML = '🐦 Bird\'s-eye — riding bird #'+cam.pov+(isLead?' <b style="color:#5cb6ff">(LEAD)</b>':' (follower)')+' · drag to look · 0 to exit';
+    leadTintEl.style.display = isLead ? 'block' : 'none';
+    return;
+  }
+  povTagEl.style.display='none'; leadTintEl.style.display='none';
+  // ---- over-the-shoulder: chase just above & to the right of the chosen bird, looking forward ----
+  if(cam.ots>=0 && birds[cam.ots]){
+    const st=birds[cam.ots];
+    const hdg=Math.atan2(st.vel.z, st.vel.x);            // flat heading (ignore roll/pitch -> steady chase)
+    _oF.set(Math.cos(hdg),0,Math.sin(hdg));              // forward (flat)
+    _oR.set(-Math.sin(hdg),0,Math.cos(hdg));             // right of the bird (flat)
+    _oE.copy(st.pos).addScaledVector(_oF,-2.6).addScaledVector(_wUp,1.5).addScaledVector(_oR,1.7);
+    camera.position.copy(_oE); camera.up.set(0,1,0);
+    _oL.copy(st.pos).addScaledVector(_oF,8);             // default aim: ahead past the bird
+    _oD.subVectors(_oL, _oE);                            // base look direction from the chase eye
+    // drag turns that look direction: yaw about world-up, then pitch about the resulting right axis
+    _qy.setFromAxisAngle(_wUp, cam.otsYaw); _oD.applyQuaternion(_qy);
+    _oRt.crossVectors(_oD, _wUp).normalize();
+    _qp.setFromAxisAngle(_oRt, cam.otsPitch); _oD.applyQuaternion(_qp);
+    camera.lookAt(_oE.x+_oD.x, _oE.y+_oD.y, _oE.z+_oD.z);
+    if(camera.fov!==BASE_FOV){ camera.fov=BASE_FOV; camera.updateProjectionMatrix(); }
+    povTagEl.style.display='block';
+    const isLead=(cam.ots===order[0]);
+    povTagEl.innerHTML = '🎥 Over-the-shoulder — bird #'+cam.ots+(isLead?' <b style="color:#5cb6ff">(LEAD)</b>':' (follower)')+' · drag to look · 0 to exit';
+    return;
+  }
+  // ---- orbit / chase ----
+  if(camera.fov!==BASE_FOV){ camera.fov=BASE_FOV; camera.updateProjectionMatrix(); }
+  camera.up.set(0,1,0);
+  if(cam.follow && state) cam.target.lerp(state.pos, 0.22);   // tighter follow so fast flight stays framed
+  const t=cam.target;
+  camera.position.set(
+    t.x+cam.dist*Math.cos(cam.el)*Math.cos(cam.az),
+    t.y+cam.dist*Math.sin(cam.el),
+    t.z+cam.dist*Math.cos(cam.el)*Math.sin(cam.az)
+  );
+  camera.lookAt(t);
+}
+
+/* ============================================================ MAIN LOOP ==== */
+let telemetry={}, playing=true, lastT=performance.now();
+function updateOneBird(st){
+  const m=st.mesh; if(!m) return;
+  m.root.position.copy(st.pos);
+  m.root.quaternion.copy(st.quat);
+  if(st.cmdRoll) m.root.rotateX(-st.cmdRoll);   // cosmetic lean into a lateral correction (physics stays wings-level)
+  // flap at shoulder, fold at elbow, twist each segment -- matching the physics
+  const be=st.beta+P.dihedral*DEG;
+  m.wingR.rotation.x=-be; m.wingL.rotation.x=be;
+  const gamma=(st.fold||0)*P.maxFoldDeg*DEG;
+  m.wingRelbow.rotation.set(0, -gamma, 0);   // in-plane backsweep about the wing normal (like a real elbow)
+  m.wingLelbow.rotation.set(0, +gamma, 0);   // left mirror
+  const betaDotMax=Math.max(1e-3,P.flapAmp*DEG*2*Math.PI*Math.max(P.flapFreq,0.01));
+  const frv=clamp(st.betaDot/betaDotMax,-1.4,1.4);
+  const feath=(st.betaDot<0? P.featherAmp*DEG*frv : 0);
+  const inTw=P.innerAoA*DEG+feath, outTw=P.outerAoA*DEG+feath;
+  m.wingRin.rotation.z=inTw; m.wingLin.rotation.z=-inTw;
+  m.wingRout.rotation.z=outTw; m.wingLout.rotation.z=-outTw;
+  // wingtip primaries: base splay/lift (winglet), splaying more with tip spread / during coast
+  const spread=clamp((P.tipSpread||0) + (st.tel.coasting?0.4:0), 0, 1);
+  const setFea=(arr,sgn)=>arr&&arr.forEach(fg=>{ const frac=fg.userData.k/4;
+    const fan=(0.10 + 0.75*spread)*(frac-0.35);          // splay: outer quills fan back
+    const lift=(0.20 + 0.55*spread)*(0.4+0.6*frac);      // outer quills lifted more
+    fg.rotation.set(-sgn*lift, -sgn*fan, 0);
+  });
+  setFea(m.wingRtips,+1); setFea(m.wingLtips,-1);
+  m.tail.rotation.z=P.tailIncidence*DEG;
+  // wingtip wake trails (each traces a shed vortex core)
+  if(P.vTrail){
+    const L2=P.span*(1-P.innerFrac);
+    const tipR=V3(0,0,L2); m.wingRout.localToWorld(tipR); pushTrail(st.trailR, m.trailR, tipR);
+    const tipL=V3(0,0,-L2); m.wingLout.localToWorld(tipL); pushTrail(st.trailL, m.trailL, tipL);
+    m.trailR.visible=true; m.trailL.visible=true;
+  } else if(m.trailR){ m.trailR.visible=false; m.trailL.visible=false; }
+}
+// Lead colouring: the current point bird is light blue in BODY AND WINGS. While a newly-promoted
+// bird is still taking over the point (leadFlash>0) it FLASHES between white and blue, so you can
+// see the hand-off in progress; once settled it's solid blue. Followers are the natural cream/tan.
+const LEAD_BODY=0x5cb6ff, LEAD_W1=0x5cb6ff, LEAD_W2=0x3f97e6, FLASH=0xffffff;
+const FOLL_BODY=0xe4dcc9, FOLL_W1=0xcfc3ad, FOLL_W2=0xbdb096;
+const _colA=new THREE.Color(), _colB=new THREE.Color();
+function mixInto(dst,a,b,t){ _colA.setHex(a); _colB.setHex(b); dst.copy(_colA).lerp(_colB,t); }
+function updateLeadColors(dt){
+  const leadArrIdx = order.length?order[0]:-1;
+  const s = 0.5 + 0.5*Math.sin(performance.now()*0.001*2*Math.PI*3.5);   // 3.5 Hz flash
+  for(let i=0;i<birds.length;i++){
+    const st=birds[i], m=st.mesh; if(!m) continue;
+    if(i===leadArrIdx){
+      if((st.leadFlash||0)>0){
+        st.leadFlash=Math.max(0,(st.leadFlash||0)-dt);
+        mixInto(m.skin.color, FLASH, LEAD_BODY, s);
+        if(m.wingMats){ mixInto(m.wingMats[0].color, FLASH, LEAD_W1, s); mixInto(m.wingMats[1].color, FLASH, LEAD_W2, s); }
+      } else {
+        m.skin.color.setHex(LEAD_BODY);
+        if(m.wingMats){ m.wingMats[0].color.setHex(LEAD_W1); m.wingMats[1].color.setHex(LEAD_W2); }
+      }
+    } else {
+      st.leadFlash=0;
+      m.skin.color.setHex(FOLL_BODY);
+      if(m.wingMats){ m.wingMats[0].color.setHex(FOLL_W1); m.wingMats[1].color.setHex(FOLL_W2); }
+    }
+  }
+}
+// ---- BIRD SHADOWS on the sea: the bird's ACTUAL polygons, flattened onto the water along the sun
+// direction (a planar projection matrix), so the shadow is a real silhouette -- flapping wings and
+// all -- not an oval. It sits UNDER the bird (birds' opaque bodies are drawn first, so the shadow is
+// correctly occluded by the flock and never paints over a bird), and the sea writes no depth so wave
+// crests can't hide it. The projection offset grows as a bird climbs, so height still reads at a glance.
+const shadowGroup = new THREE.Group(); scene.add(shadowGroup);
+const SHADOW_Y = 0.08;
+const _shadowMatrix = (function(){
+  const S=new THREE.Vector3(40,70,30);           // sun position; light travels along -S
+  const kx=(-S.x)/(-S.y), kz=(-S.z)/(-S.y), H=SHADOW_Y;
+  return new THREE.Matrix4().set(1,-kx,0,kx*H,  0,0,0,H,  0,-kz,1,kz*H,  0,0,0,1);
+})();
+const _shTmp=new THREE.Matrix4();
+function buildShadows(){
+  while(shadowGroup.children.length){ const m=shadowGroup.children.pop(); m.material.dispose(); } // geometry shared w/ birds
+  for(const st of birds){
+    const mat=new THREE.MeshBasicMaterial({color:0x5b6a73, transparent:true, opacity:0.3, depthWrite:false});
+    st._shadowMat=mat; st._shadowPairs=[];
+    st.mesh.root.traverse(o=>{
+      if(o.isMesh && o.geometry && o.geometry.type!=='BoxGeometry'){   // skip the tiny primary-feather boxes
+        const sh=new THREE.Mesh(o.geometry, mat);
+        sh.matrixAutoUpdate=false; sh.renderOrder=-1; sh.frustumCulled=false;
+        shadowGroup.add(sh); st._shadowPairs.push({src:o, sh});
+      }
+    });
+  }
+}
+function updateShadows(){
+  for(const st of birds){
+    if(!st._shadowPairs) continue;
+    // cast only over open water, and only while airborne
+    const szc = st.pos.z - ((-30)/(-70))*(st.pos.y-SHADOW_Y);      // projected z of the bird
+    const over = (szc < COAST_Z + coastLine(st.pos.x) - 1) && st.pos.y>0.15;
+    st._shadowMat.opacity = over ? clamp(0.36 - st.pos.y*0.008, 0.08, 0.36) : 0;
+    if(!over){ for(const p of st._shadowPairs) p.sh.visible=false; continue; }
+    st.mesh.root.updateMatrixWorld(true);
+    for(const p of st._shadowPairs){
+      p.sh.visible = p.src.visible;
+      p.sh.matrix.multiplyMatrices(_shadowMatrix, p.src.matrixWorld);   // flatten the polygons onto the sea
+    }
+  }
+}
+function updateBirdMesh(dt){
+  for(let i=0;i<birds.length;i++){
+    updateOneBird(birds[i]);
+    // hide the bird we're riding so we don't stare into the back of its own head
+    if(birds[i].mesh) birds[i].mesh.root.visible = (cam.pov!==i);
+  }
+  updateLeadColors(dt||0);
+  updateShadows();
+}
+function updateFlow(dt){
+  if(!flow||!P.vFlow){ if(flow)flow.visible=false; return;} flow.visible=true;
+  const wind=windWorld(); const b=state.pos;
+  for(let i=0;i<flowN;i++){
+    // air moves at wind; relative to a mostly-forward-moving bird it streams backward
+    flowPos[i*3]   += (wind.x)*dt;
+    flowPos[i*3+1] += (wind.y)*dt;
+    flowPos[i*3+2] += (wind.z)*dt;
+    // recycle particles that fall behind or stray
+    const dx=flowPos[i*3]-b.x, dz=flowPos[i*3+2]-b.z, dy=flowPos[i*3+1]-b.y;
+    if(dx<-24||Math.abs(dz)>26||Math.abs(dy)>16||flowPos[i*3+1]<0.2) resetFlowParticle(i,false);
+  }
+  flow.geometry.attributes.position.needsUpdate=true;
+}
+function updateArrows(){
+  const st=state, o=st.pos.clone();
+  const scale=clamp(2.5/Math.max(P.mass*G,1),0.02,3);
+  const fd=telemetry.flightDir||V3(1,0,0);
+  setArrow(arrows.weight,o,V3(0,-P.mass*G,0),scale);
+  setArrow(arrows.lift,o,V3(0,telemetry.lift||0,0),scale);
+  setArrow(arrows.thrust,o,fd.clone().multiplyScalar(telemetry.thrust||0),scale*2.2);
+  const dv=(telemetry.flightDir||V3(1,0,0)).clone().multiplyScalar(-(telemetry.dragScalar||0));
+  setArrow(arrows.drag,o,dv,scale*2.2);
+}
+function updateHUD(){
+  const st=state, wind=windWorld();
+  const airspeed=V3().subVectors(st.vel,wind).length();
+  const ld=(telemetry.dragScalar>0.01)? (telemetry.lift/telemetry.dragScalar):0;
+  const aoaS=ema('aoa',telemetry.aoa*RAD), ldS=ema('ld',ld,0.06), pwrS=ema('pwr',telemetry.power||0,0.06);
+  setStat('airspeed',fmt(airspeed)); setStat('alt',fmt(st.pos.y));
+  setStat('vspeed',(st.vel.y>=0?'+':'')+fmt(st.vel.y)); setStat('aoa',fmt(aoaS));
+  setStat('ld',ldS>0?fmt(ldS):'–'); setStat('power',fmt(pwrS));
+  // fold + actual flap amplitude (RMS estimate: A = sqrt(2*mean(beta^2)))
+  const bdeg=st.beta*RAD;
+  SMV.bsq=ema('bsq',bdeg*bdeg,0.03);
+  setStat('fold',fmt(telemetry.foldDeg||0));
+  setStat('flapamp',fmt(Math.sqrt(2*Math.max(0,SMV.bsq))));
+  setStat('gap', telemetry.gap==null?'–':fmt(telemetry.gap));
+  setStat('duty', fmt(100*(state.flapDuty||0)));
+  const role = (state.passing!=null)?'PASS':(state.leaderIdx==null)?(order[0]===focus?'LEAD':'SOLO'):('→#'+state.leaderIdx);
+  setStat('fatigue', fmt(100*(state.fatigue||0)));
+  setStat('vpref', fmt(state.vPref||P.paceSpeed));
+  setStat('upwash', (telemetry.upwash>=0?'+':'')+fmt(telemetry.upwash||0));
+  setStat('bird', '#'+focus+' '+role);
+  // flap / coast state badge
+  const mb=document.getElementById('modeBadge');
+  if(P.flapStrategy!=='intermittent'){ mb.textContent='FLAP'; mb.className='badge flap'; }
+  else if(telemetry.coasting){ mb.textContent='COAST'; mb.className='badge coast'; }
+  else { mb.textContent='FLAP'; mb.className='badge flap'; }
+  const sk=document.getElementById('skimTag');
+  if(sk){ if(skimState==='cruise') sk.textContent='';
+    else { const lbl={descend:'Dropping to the surface',skim:'Skimming the surface in ground effect',ascend:'Climbing back to cruise'}[skimState];
+      sk.innerHTML='<span style="color:#8fe9df">'+lbl+'</span> (no passing until the dip completes). '; } }
+  const W=P.mass*G;
+  const setBar=(id,val,ref)=>{
+    const f=document.getElementById('bar_'+id), v=document.getElementById('barv_'+id);
+    const frac=clamp(val/ref,-1,1);
+    f.style.width=Math.abs(frac)*50+'%';
+    f.style.left=frac>=0?'50%':(50+frac*50)+'%';
+    v.textContent=fmt(val)+' N';
+  };
+  setBar('lift',telemetry.lift||0,W*2);
+  setBar('thrust',telemetry.thrust||0,W*2);
+  setBar('drag',-(telemetry.dragScalar||0),W*2);
+  setBar('weight',-W,W*2);
+  const badge=document.getElementById('stallBadge');
+  const stallS=ema('stall',telemetry.stalled||0,0.05);
+  if(stallS>10){ badge.textContent='STALL'; badge.className='badge stall'; }
+  else { badge.textContent='OK'; badge.className='badge ok'; }
+  // hint
+  const hint=document.getElementById('hudHint');
+  let msg='';
+  const geZone = P.groundEffect && st.pos.y < 2*P.span;
+  if(st.landed) msg='<span class="flash">On the water.</span> ';
+  else if(geZone) msg='<span class="flash">In ground effect — extra lift, less induced drag.</span> ';
+  const ct=telemetry.cycThrust||0;
+  const isFollower = state.leaderIdx!=null;
+  if(birds.length>1 && isFollower){
+    const up=telemetry.upwash||0;
+    const draftTxt = up>0.05 ? ' Riding <span style="color:#8fe9df">+'+fmt(up)+' m/s upwash</span> off the bird ahead.'
+                             : (P.draft? ' (feeling for the upwash)':'');
+    if((state.boxedT||0)>0) msg+='<span style="color:#ffcf6e">Boxed in</span> — birds ahead on both sides, so it is easing back toward the open side. ';
+    if(telemetry.coasting) msg+='<span style="color:#9aa7ff">Coasting</span> '+fmt(telemetry.gap||0)+' m behind bird #'+state.leaderIdx+'.'+draftTxt;
+    else msg+='<span style="color:var(--accent)">Flapping</span> to keep up with bird #'+state.leaderIdx+' ('+fmt(telemetry.gap||0)+' m back).'+draftTxt;
+  } else if(birds.length>1 && state.passing!=null){
+    msg+='<span style="color:#ffcf6e">Passing</span> bird #'+state.passing+' — it was flying slower than this bird wants to go.';
+  } else if(birds.length>1){
+    msg+='<span style="color:#8fe9df">Nobody ahead</span> — flying its own pace of '+fmt(state.vPref||P.paceSpeed)+' m/s, '+fmt(100*(state.fatigue||0))+'% fatigued. '
+       +(P.leadRotate?'Fresher birds will go past once it tires and slows.':'Passing is off, so it keeps the point.');
+  } else if(P.flapStrategy==='intermittent' && telemetry.coasting){
+    msg+='<span style="color:#9aa7ff">Coasting</span> — '+fmt(telemetry.gap||0)+' m behind the leader, gliding and bleeding speed. Beats again at '+fmt(P.followDist+P.draftBand)+' m.';
+  } else if(P.flapStrategy==='intermittent'){
+    msg+='<span style="color:var(--accent)">Flapping</span> to catch back up ('+fmt(telemetry.gap||0)+' m behind). Duty '+fmt(100*(state.flapDuty||0))+'%.';
+  } else if(P.mode==='muscle' && (telemetry.effort||0)>0.99){
+    msg+='<span class="flash">Muscles saturated — wingbeat falling short. Raise strength, fold more, or lighten the wings.</span>';
+  } else if(ct<-0.6) msg+='Cycle-avg net thrust '+fmt(ct)+' N — decelerating. Flap harder/faster or add feather.';
+  else if(ct>0.6) msg+='Cycle-avg net thrust +'+fmt(ct)+' N — accelerating from flapping.';
+  else msg+='Cycle-avg net thrust ≈ '+fmt(ct)+' N — near cruise balance.';
+  hint.innerHTML=msg;
+}
+
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt=(now-lastT)/1000; lastT=now; dt=clamp(dt,0,0.05)*P.timeScale;
+  if(playing && dt>0){
+    // fixed substeps for stability
+    const sub=1/480; let acc=dt;
+    let guard=0;
+    while(acc>1e-6 && guard++<80){ const h=Math.min(sub,acc); integrate(h); acc-=h; }
+    updateBirdMesh(dt); updateFlow(dt); updateArrows(); updateWindField();
+    // strips visualization opacity
+    // charts
+    chartData.push({lift:telemetry.lift||0, thrust:telemetry.thrust||0, alt:state.pos.y});
+    if(chartData.length>CHART_N) chartData.shift();
+    updateHUD(); drawChart();
+  }
+  updateWorld();
+  updateCamera();
+  renderer.render(scene,camera);
+}
+
+/* ---------- controls wiring ---------- */
+document.getElementById('btnPlay').onclick=e=>{playing=!playing; e.target.textContent=playing?'⏸ Pause':'▶ Play';};
+document.getElementById('btnReset').onclick=()=>{resetState();};
+function resetAll(){
+  Object.assign(P, JSON.parse(JSON.stringify(DEFAULTS)));
+  currentPreset='Pelican';
+  buildUI();                 // rebuild panel so every slider, select, chip and toggle reflects defaults
+  recomputeDerived(); buildBird(); resetState();
+}
+document.getElementById('btnResetAll').onclick=resetAll;
+document.getElementById('btnFollow').onclick=e=>{cam.follow=!cam.follow; e.target.textContent='🎥 Follow: '+(cam.follow?'on':'off');};
+document.getElementById('ctlHead').onclick=()=>{document.getElementById('controls').classList.toggle('collapsed');};
+function setFocus(i){ if(!birds.length) return; focus=(i+birds.length)%birds.length; state=birds[focus]; telemetry=state.tel; }
+addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();document.getElementById('btnPlay').click();}
+  if(e.key==='r'||e.key==='R') resetState();
+  if(e.key==='f'||e.key==='F') document.getElementById('btnFollow').click();
+  if(e.key===']'||e.key==='.') setFocus(focus+1);       // cycle which bird the HUD/camera follows
+  if(e.key==='['||e.key===',') setFocus(focus-1);
+  // bird's-eye view: 1-9 ride that bird (look through its eyes), 0 returns to the orbit camera
+  // camera views: 1-9 ride a bird (through its eyes); Shift+1-9 over-the-shoulder chase; 0 = orbit
+  const dm = e.code && e.code.match(/^Digit([0-9])$/);
+  if(dm){ const d=+dm[1];
+    if(d===0){ cam.pov=-1; cam.ots=-1; }
+    else if(d-1 < birds.length){ const i=d-1;
+      if(e.shiftKey){ cam.ots=i; cam.pov=-1; cam.otsYaw=0; cam.otsPitch=0; setFocus(i); }
+      else { cam.pov=i; cam.ots=-1; cam.povYaw=0; cam.povPitch=0; setFocus(i); }
+    }
+  }
+});
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+/* ---------- boot ---------- */
+buildUI(); buildHUD(); buildFlow(); buildWindField(); resetState();
+requestAnimationFrame(frame);
+
+// expose for headless verification
+window.__sim={P,
+  get state(){return state;}, get telemetry(){return telemetry;},
+  get birds(){return birds;}, get order(){return order;}, get focus(){return focus;}, set focus(i){setFocus(i);},
+  get skimState(){return skimState;}, get flockBaseAlt(){return flockBaseAlt;},
+  forceSkim(){ skimCountdown=0; },   // trigger a dip now (for testing)
+  derived, integrate, stepFlock, stepBird, computeWakes, flockControl,
+  resetState, resetFlock, computeForces, cam, buildBird};
+</script>

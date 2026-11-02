@@ -14,14 +14,18 @@ window.__run = function(opts){
   const wasPassing=new Array(n).fill(false);
   let closeCalls=0, passes=0, lastFront=-1, leadChanges=0, t=0, nextS=0, minY=1e9, minPair=1e9, maxSpread=0, samples=0;
   const shape={line:0,V:0,echelon:0,filled:0,mixed:0}, rel={inline:0,stag:0}, relSk={inline:0,stag:0};
-  const intPow=[0,0], edgePow=[0,0]; let interiorAcc=0;
+  const intPow=[0,0], edgePow=[0,0], inDy=[0,0]; let interiorAcc=0;
   const balance={symmetric:0,lopsided:0,oneSided:0}, stringLen=[0,0,0,0,0,0]; let longestString=1, skimSamples=0, skimStr3=0, cruiseSamples=0, cruiseStr3=0;
-  const timeline=[];
+  const timeline=[]; let minTip=1e9, tipTouch=0, skimSteps=0, skimY=0, skimSpd=0, skimFlap=0, skimSpacing=[0,0];
   while(t<total){
     S.integrate(dt); t+=dt;
     S.birds.forEach((b,i)=>{ const p=b.passing!=null; if(p&&!wasPassing[i]) passes++; wasPassing[i]=p; });
     if(t<warm) continue;
     for(const b of S.birds) minY=Math.min(minY,b.pos.y);
+    // while skimming: wingtip clearance, body height, airspeed, fraction of time flapping
+    if(S.skimState==='skim'){ skimSteps++;
+      for(const b of S.birds){ const ly=b.tel.lowY; if(ly!=null){ minTip=Math.min(minTip,ly); if(ly<0) tipTouch++; }
+        skimY+=b.pos.y; skimSpd+=Math.hypot(b.vel.x,b.vel.z); skimFlap+=b.flapping?1:0; } }
     // power by role: leading (no bird ahead to draft) vs drafting, overall and per skim phase
     for(const b of S.birds){
       const r=(b.target==null)?'solo':'draft', k=S.skimState+'_'+r, p=b.tel.power||0;
@@ -42,7 +46,7 @@ window.__run = function(opts){
       // in-line vs staggered relative to the nearest bird ahead
       let best=-1,bd=1e9;
       for(let j=0;j<n;j++){ if(j===i) continue; const da=A[j]-A[i]; if(da<0.3||da>15) continue; const d=Math.hypot(da,C[j]-C[i]); if(d<bd){bd=d;best=j;} }
-      if(best>=0){ const Q=(S.skimState==='skim')?relSk:rel; if(Math.abs(C[best]-C[i])<0.7) Q.inline++; else Q.stag++; }
+      if(best>=0){ const Q=(S.skimState==='skim')?relSk:rel; if(Math.abs(C[best]-C[i])<0.7){ Q.inline++; inDy[0]+=Math.abs(S.birds[best].pos.y-S.birds[i].pos.y); inDy[1]++; } else Q.stag++; }
       // interior = birds ahead of me on BOTH sides (inside the formation, not on an arm's outer edge)
       let aL=false, aR=false;
       for(let j=0;j<n;j++){ if(j===i) continue; const da=A[j]-A[i], dc=C[j]-C[i]; if(da>0.5&&da<7){ if(dc<-0.8&&dc>-5) aL=true; if(dc>0.8&&dc<5) aR=true; } }
@@ -79,9 +83,11 @@ window.__run = function(opts){
     interiorPct:Math.round(100*interiorAcc/Math.max(1,samples)),
     powerInterior:intPow[1]?+(intPow[0]/intPow[1]).toFixed(1):null, powerEdge:edgePow[1]?+(edgePow[0]/edgePow[1]).toFixed(1):null,
     inlinePct:Math.round(100*rel.inline/Math.max(1,rel.inline+rel.stag)),
+    inlineDy:inDy[1]?+(inDy[0]/inDy[1]).toFixed(2):null,  // mean height offset (m) of an in-line bird from the one ahead
     inlineSkimPct:Math.round(100*relSk.inline/Math.max(1,relSk.inline+relSk.stag)),
     leadChanges, passes, frontShare:frontT.map(v=>Math.round(100*v/(total-warm))),
     powerSolo:avg(pr.solo), powerDraft:avg(pr.draft),
     powerByPhase:Object.fromEntries(Object.entries(pr).filter(([k])=>k.includes('_')).map(([k,v])=>[k,avg(v)])),
+    skim: skimSteps? {minTip:+minTip.toFixed(2), tipTouchPct:+(100*tipTouch/(skimSteps*n)).toFixed(2), meanY:+(skimY/(skimSteps*n)).toFixed(2), meanSpeed:+(skimSpd/(skimSteps*n)).toFixed(1), flapPct:Math.round(100*skimFlap/(skimSteps*n))} : null,
     minY:+minY.toFixed(2), minPair:+minPair.toFixed(2), closeCallPct:+(100*closeCalls/Math.max(1,samples)).toFixed(1), maxSpreadAlong:+maxSpread.toFixed(1), timeline};
 };
