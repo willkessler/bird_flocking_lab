@@ -100,3 +100,7 @@ tools/flock-metrics/run.sh versions/bird-sim-v12.html my-spec.json
 ```
 
 It requires Docker and runs in the `mcr.microsoft.com/playwright` image. A spec is a JSON list of runs, `{"name", "secs", "P": {parameter overrides}, "timeline": N}`. The harness steps the physics directly with no rendering, so 300 simulated seconds take about 5 s.
+
+## License
+
+[MIT](LICENSE). This is an open, experimental project. If you're studying formation flight, flapping propulsion, or emergent collective behavior, you're welcome to use it, fork it, and build on it.
