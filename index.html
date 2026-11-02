@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v16</title>
+<title>Bird Flight Lab v17</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -89,7 +89,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v16</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v17</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -187,7 +187,8 @@ const P = {
   draftPull:4.2, slipWidth:2.2, slipDecay:7,
   wakeSeek:0.6,                // how readily a bird slides toward the better air it feels across its wings
   slack:0.8,                   // how loosely a follower keeps its spacing before it flaps to correct
-  pursuit:0.15,                // sideways pull toward the line of the bird I follow (strings, when the wake fades)
+  pursuit:0.15,                // m/s of preference for the spot straight behind a bird (strings, when the wake fades)
+  lineUp:0.15,                 // m/s of preference for the wingtip on the same side the bird ahead sits of its own leader
   clearView:0.8,               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
   wakeSink:1, altFreedom:1.5,  // trailing vortices sink behind a bird; each follower may sit up to altFreedom m above/below the flock
   // emergent leadership: muscle fatigue + individual variation + "pass a bird that's too slow for me"
@@ -1200,24 +1201,61 @@ function flockControl(st, dt){
   // ---- 1. PACE
   st.vPref = P.paceSpeed*(1+(st.drive||0))*(1 - P.fatigueSlow*st.fatigue);
 
-  // ---- 2. DRAFT: (re)choose whom to follow a few times a second -- the nearest bird ahead of me in
-  // a forward cone -- with hysteresis so I don't flicker between two similar choices.
-  const usable=(a,c,dy)=> a>0.6 && a<P.wakeRange && Math.abs(c) < 0.5*a + 3*sp && Math.abs(dy)<6;
+  // ---- 2. DRAFT: (re)choose a few times a second WHERE to fly: one of the open spots behind a bird
+  // ahead -- off its left wingtip, off its right wingtip, or straight behind it. Each spot is judged by
+  // the rising air I'd expect there (the wake of every bird, the same air I'd then feel), less how far I'd
+  // have to go. A spot another bird already holds doesn't count. Inside a V, or beside the middle of an
+  // arm, the open spots sit in downwash, so the good ones are at the ends of the arms: arms stay one bird
+  // wide and grow at their tips. Straight behind gets a small bonus (I keep the bird I follow in view);
+  // it only wins where the wake has faded, e.g. skimming low over the water.
+  // If nothing decent is open ahead -- I'm squeezed in near the front or inside the V, where the open
+  // spots are in downwash -- I also consider spots behind settled birds beside or behind me (birds riding
+  // good air, i.e. on an arm) and ease back down the formation to the end of an arm. Only a bird with
+  // nobody ahead of it (the leader) doesn't look for a spot.
+  const ahead=(a,c,dy)=> a>0.6 && a<P.wakeRange && Math.abs(c) < 0.5*a + 3*sp && Math.abs(dy)<6;
+  const near =(a,c,dy)=> Math.abs(a)<P.wakeRange && Math.abs(c) < 0.5*Math.abs(a) + 3*sp + 6 && Math.abs(dy)<6;
   let tgt = st.target!=null ? birds[st.target] : null;
-  if(tgt && !usable(...rel(tgt))){ tgt=null; st.target=null; }
+  if(tgt && !near(...rel(tgt))){ tgt=null; st.target=null; }
   st.lookT -= dt;
   if(st.lookT<=0){
     st.lookT = 0.3 + 0.2*Math.random();
-    let best=null, bd=Infinity;
+    const cands=[]; let anyAhead=false;
     for(const b of birds){
       if(b===st || b.id===st.passing) continue;
-      const [a,c,dy]=rel(b); if(!usable(a,c,dy)) continue;
-      const d=Math.hypot(a,c); if(d<bd){ bd=d; best=b; }
+      const [a,c,dy]=rel(b);
+      const isAhead=ahead(a,c,dy); if(isAhead) anyAhead=true;
+      const settled = b.target==null || b.wakeWind.y > 0.25;
+      if(isAhead || (near(a,c,dy) && settled)) cands.push([Math.hypot(a - P.followDist, c), b, isAhead]);
     }
-    if(best && best!==tgt){
-      const dCur = tgt ? Math.hypot(...rel(tgt).slice(0,2)) : Infinity;
-      if(bd < 0.8*dCur){ tgt=best; st.target=best.id; }
+    if(!anyAhead){ tgt=null; st.target=null; cands.length=0; }
+    cands.sort((p,q)=>p[0]-q[0]);
+    let best=null, bestSide=0, bs=-Infinity;
+    for(const pass of [true,false]){                         // spots ahead first; behind only if none is decent
+      if(!pass && bs > 0.3) break;
+    for(const [,b,isAhead] of cands.slice(0,12)){
+      if(isAhead!==pass) continue;
+      // Same side: which side of the bird IT follows is b on? Given two equally good spots, I take the
+      // one on that same side -- so a line keeps leaning the way it already leans.
+      const bb = b.target!=null ? birds[b.target] : null;
+      const bLc = bb ? -(b.pos.x-bb.pos.x)*bb._hz + (b.pos.z-bb.pos.z)*bb._hx : 0;
+      const bSide = Math.abs(bLc) > 0.5 ? Math.sign(bLc) : 0;
+      for(const side of [-1,0,1]){
+        const sx=b.pos.x - b._hx*P.followDist - b._hz*side*WK.bprime;      // spot behind b, in b's frame
+        const sz=b.pos.z - b._hz*P.followDist + b._hx*side*WK.bprime;
+        let taken=false;
+        for(const w of birds){ if(w===st || w===b) continue;
+          const ex=w.pos.x-sx, ez=w.pos.z-sz, al=ex*b._hx+ez*b._hz, la=-ex*b._hz+ez*b._hx;
+          if(Math.abs(al)<1.5 && Math.abs(la)<1.0){ taken=true; break; } }
+        if(taken) continue;
+        let score = upwashAt(sx, b.pos.y, sz, b._hx, b._hz, st)
+                  - 0.03*Math.hypot(sx-st.pos.x, sz-st.pos.z)
+                  + (side===0 ? P.pursuit : 0) + (side!==0 && side===bSide ? P.lineUp : 0)
+                  + (b===tgt && side===st.spotSide ? 0.1 : 0);                // don't flicker between near-equal spots
+        if(score>bs){ bs=score; best=b; bestSide=side; st.spotDx=sx-b.pos.x; st.spotDz=sz-b.pos.z; }
+      }
     }
+    }
+    if(best){ tgt=best; st.target=best.id; st.spotSide=bestSide; } else { st.spotDx=st.spotDz=null; }
   }
 
   // ---- 5. PASS (decided before steering so it takes effect this step)
@@ -1225,7 +1263,7 @@ function flockControl(st, dt){
     const pb=birds[st.passing]; st.passingT+=dt;
     if(!pb || rel(pb)[0] < -1.0 || st.passingT>20) st.passing=null;   // I'm past it (or gave up)
   }
-  if(P.leadRotate && tgt && skimState==='cruise' && st.passing==null){
+  if(P.leadRotate && tgt && rel(tgt)[0]>0 && skimState==='cruise' && st.passing==null){
     const slowBy = st.vPref - (tgt.gsS!=null?tgt.gsS:gs);
     st.passT = slowBy > P.passMargin ? st.passT + dt : Math.max(0, st.passT - 2*dt);
     if(st.passT > 3){                       // it's been too slow for me for a while: go around it
@@ -1272,7 +1310,8 @@ function flockControl(st, dt){
     let nPos=0, nNeg=0;
     for(const b of birds){ if(b===st) continue; const [a,c]=rel(b);
       if(a>-2 && a<8 && Math.abs(c)<8 && Math.abs(c)>0.3){ if(c>0) nPos++; else nNeg++; } }
-    st.escDir = nPos<nNeg ? +1 : nNeg<nPos ? -1 : (st.escDir||(st.side||1));
+    st.escDir = Math.abs(st.spotC||0)>0.5 ? Math.sign(st.spotC)                  // toward the spot I'm making for
+              : nPos<nNeg ? +1 : nNeg<nPos ? -1 : (st.escDir||(st.side||1));
   }
   const relocating = st.boxedT > 0;
   if(relocating) vlat += P.clearView*st.escDir;
@@ -1284,10 +1323,10 @@ function flockControl(st, dt){
     // tether: slid clean out of the bird's wake (nothing left to feel)? drift back toward it
     const c=rel(tgt)[1], reach=2.2*sp+1.0;
     if(Math.abs(c)>reach) vlat += 0.4*(Math.abs(c)-reach)*Math.sign(c);
-    // follow: a gentle pull toward the line of the bird I'm following (I keep it in view dead ahead).
-    // Far weaker than the pull of the wake's upwash, so where there's a wake to ride it barely shows --
-    // but where the wake fades (skimming low over the water) it's the only thing left steering me.
-    vlat += P.pursuit*clamp(c, -2, 2);
+    // head for the spot I chose (rule 2); feeling the air (rule 3) then fine-tunes where I sit in it
+    st.spotC = st.spotDx!=null ? (tgt.pos.x+st.spotDx-st.pos.x)*nx + (tgt.pos.z+st.spotDz-st.pos.z)*nz
+                               : c + (st.spotSide||0)*WK.bprime;
+    vlat += 0.4*clamp(st.spotC, -2, 2);
     st.side = c<0 ? +1 : -1;                                  // which side of the bird ahead I'm on
   } else st.side=0;
   for(const b of birds){                                      // don't overlap a bird alongside
@@ -1394,6 +1433,39 @@ function flockControl(st, dt){
 //
 // Both are laid out in the frame of the bird making the wake (behind = against ITS heading), so
 // they stay correct when the flock is turning along the coast.
+// Wake constants, refreshed each step by computeWakes (shared with spot-scoring in flockControl).
+const WK={k:0, tipZ:1, rc:0.35, wSink:0, Vref:11, bprime:1.7};
+// Vertical air at point (px,py,pz) from the two trailing wingtip vortices of bird 'other' (0 if the
+// point isn't behind it). Outboard of a tip = upwash, between the tips = downwash.
+function vortexUp(px, py, pz, other){
+  const ddx=px - other.pos.x, ddz=pz - other.pos.z;
+  const back=-(ddx*other._hx + ddz*other._hz);            // >0 : this point is behind 'other'
+  if(back<=0.05 || back>P.wakeRange) return 0;
+  const lz=-ddx*other._hz + ddz*other._hx;               // sideways offset in other's frame
+  const decay=Math.exp(-back/Math.max(P.wakeDecay,1));
+  const sink=WK.wSink*back/WK.Vref;                      // how far the vortex pair has dropped by here
+  const dy=py - other.pos.y;
+  const dyV=dy + sink;                                   // to the (sunken) vortex
+  const dyI=dy + 2*other.pos.y - sink;                   // to its mirror image below the sea surface
+  let u=0;
+  for(const sg of [+1,-1]){                              // the two wingtips of 'other'
+    const dz=lz - sg*WK.tipZ;
+    u += sg*WK.k*dz/(dz*dz + dyV*dyV + WK.rc*WK.rc)*decay;
+    // GROUND EFFECT ON THE WAKE: near the water each tip vortex has an opposite-signed image vortex,
+    // which cancels much of the upwash beside it. Skimming low, there's little V niche left to find.
+    if(P.groundEffect) u -= sg*WK.k*dz/(dz*dz + dyI*dyI + WK.rc*WK.rc)*decay;
+  }
+  return u;
+}
+// The rising air a bird would feel across its wings at (px,py,pz) heading along (hx,hz), from every
+// bird but 'self' -- what it expects to find at a spot it is thinking of flying to.
+function upwashAt(px, py, pz, hx, hz, self){
+  const off=0.5*P.span; let u=0;
+  for(const o of birds){ if(o===self) continue;
+    for(let s=-1;s<=1;s++) u += vortexUp(px - hz*s*off, py, pz + hx*s*off, o); }
+  return P.draftStrength*u/3;
+}
+
 function computeWakes(){
   const rho=P.rho, Vref=Math.max(P.paceSpeed,3), rc=Math.max(P.wakeCore,0.05);
   const bprime=(Math.PI/4)*2*P.span, tipZ=P.span*0.9;
@@ -1402,6 +1474,7 @@ function computeWakes(){
   // The trailing vortices SINK behind a bird at roughly the far-field downwash, w ~ 2L/(rho V pi b'^2)
   // (~0.5 m/s for a pelican), so a bird further back -- or a little higher -- sits above the worst of it.
   const wSink = P.wakeSink ? 2*L/(rho*Vref*Math.PI*bprime*bprime) : 0;
+  Object.assign(WK, {k, tipZ, rc, wSink, Vref, bprime});
   const sw2=Math.max(P.slipWidth,0.2)**2, sld=Math.max(P.slipDecay,0.5);
   for(const o of birds){ const h=Math.hypot(o.vel.x,o.vel.z)||1; o._hx=o.vel.x/h; o._hz=o.vel.z/h; }
   const off=0.5*P.span;                         // sample point at the middle of each half-wing
@@ -1417,23 +1490,13 @@ function computeWakes(){
       if(other===st) continue;
       for(let s=0;s<5;s++){                     // 0 = my -side half-wing, 1 = body, 2 = my +side half-wing,
         const lo=s<3 ? (s-1)*off : 0;           // 3/4 = just above / below my body (to feel which height is better)
-        const dy=st.pos.y + (s===3 ? 0.3 : s===4 ? -0.3 : 0) - other.pos.y;
-        const ddx=st.pos.x+nx*lo - other.pos.x, ddz=st.pos.z+nz*lo - other.pos.z;
+        const py=st.pos.y + (s===3 ? 0.3 : s===4 ? -0.3 : 0), px=st.pos.x+nx*lo, pz=st.pos.z+nz*lo;
+        const ddx=px - other.pos.x, ddz=pz - other.pos.z;
         const back=-(ddx*other._hx + ddz*other._hz);          // >0 : this point is behind 'other'
         if(back<=0.05 || back>P.wakeRange) continue;
-        const lz=-ddx*other._hz + ddz*other._hx;             // sideways offset in other's frame
-        const decay=Math.exp(-back/Math.max(P.wakeDecay,1));
-        const sink=wSink*back/Vref;                          // how far the vortex pair has dropped by here
-        const dyV=dy + sink;                                 // to the (sunken) vortex
-        const dyI=dy + 2*other.pos.y - sink;                 // to its mirror image below the sea surface
-        for(const sg of [+1,-1]){                            // the two wingtips of 'other'
-          const dz=lz - sg*tipZ;
-          uS[s] += sg*k*dz/(dz*dz + dyV*dyV + rc*rc)*decay;  // outboard of a tip = upwash
-          // GROUND EFFECT ON THE WAKE: near the water each tip vortex has an opposite-signed image vortex,
-          // which cancels much of the upwash beside it. Skimming low, there's little V niche left to find.
-          if(P.groundEffect) uS[s] -= sg*k*dz/(dz*dz + dyI*dyI + rc*rc)*decay;
-        }
+        uS[s] += vortexUp(px, py, pz, other);
         if(s>2) continue;
+        const lz=-ddx*other._hz + ddz*other._hx, dy=py - other.pos.y;
         const wake=Math.exp(-(lz*lz + dy*dy)/sw2)*Math.exp(-back/sld);
         if(wake>dS[s]){ dS[s]=wake; if(s===1){ fdx=other._hx; fdz=other._hz; } }   // ride the deepest one
       }
@@ -1549,7 +1612,8 @@ const SCHEMA=[
    {k:'slotDz',label:'Start spacing — across',min:0.6,max:4,step:0.1,unit:'m',hint:'only lays out the starting flock'},
    {k:'altFreedom',label:'Height freedom',min:0,max:3,step:0.1,unit:'m',hint:'how far above or below the flock a follower may settle, seeking the height with the most upwash. 0 = everyone flies level'},
    {k:'clearView',label:'Keep a clear view',min:0,max:2,step:0.05,unit:'m/s',hint:'a bird with others ahead on BOTH sides drifts toward the open side and eases back. 0 = birds stay boxed in and the flock fills in as a diamond'},
-   {k:'pursuit',label:'Follow the bird ahead',min:0,max:0.6,step:0.05,unit:'/s',hint:'a gentle sideways pull toward the line of the bird I follow. Weak next to the wake, so V\'s and echelons still win up high; skimming low with loose spacing (the water cancels the wake) it lines birds up into strings. 0 = v15 behaviour'},
+   {k:'lineUp',label:'Same side as the bird ahead',min:0,max:0.6,step:0.05,unit:'m/s',hint:'if the bird ahead of me sits to the left of the bird it follows, I lean toward its left wingtip too (and likewise right) -- a tie-breaker worth this many m/s of upwash, so better air still wins. 0 = off'},
+   {k:'pursuit',label:'Follow the bird ahead',min:0,max:0.6,step:0.05,unit:'m/s',hint:'how much a bird prefers the spot straight behind the bird ahead over a wingtip spot, in m/s of upwash. Small next to the wake, so V\'s and echelons win up high; skimming low with loose spacing (the water cancels the wake) it lines birds up into strings'},
    {k:'wakeSeek',label:'Wake seeking',min:0,max:2,step:0.05,unit:'×',hint:'how readily a bird slides toward the wing that feels more lift. 0 = it stays wherever it is'},
    {k:'draftStrength',label:'Draft upwash strength',min:0,max:4,step:0.1,unit:'×',hint:'lift bonus a bird gets in the wake ahead'},
    {k:'draftPull',label:'Slipstream pull',min:0,max:8,step:0.1,unit:'m/s',hint:'co-moving air in the wake — reduces a follower’s drag and couples the line (the "rubber band")'},
@@ -2178,6 +2242,6 @@ window.__sim={P,
   get birds(){return birds;}, get order(){return order;}, get focus(){return focus;}, set focus(i){setFocus(i);},
   get skimState(){return skimState;}, get flockBaseAlt(){return flockBaseAlt;},
   forceSkim(){ skimCountdown=0; },   // trigger a dip now (for testing)
-  derived, integrate, stepFlock, stepBird, computeWakes, flockControl,
+  derived, integrate, stepFlock, stepBird, computeWakes, flockControl, upwashAt, WK,
   resetState, resetFlock, computeForces, cam, buildBird};
 </script>

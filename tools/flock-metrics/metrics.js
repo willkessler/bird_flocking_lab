@@ -14,7 +14,7 @@ window.__run = function(opts){
   const wasPassing=new Array(n).fill(false);
   let closeCalls=0, passes=0, lastFront=-1, leadChanges=0, t=0, nextS=0, minY=1e9, minPair=1e9, maxSpread=0, samples=0;
   const shape={line:0,V:0,echelon:0,filled:0,mixed:0}, rel={inline:0,stag:0}, relSk={inline:0,stag:0};
-  const intPow=[0,0], edgePow=[0,0], inDy=[0,0]; let interiorAcc=0;
+  const intPow=[0,0], edgePow=[0,0], inDy=[0,0]; let ends=0, branched=0; let interiorAcc=0;
   const balance={symmetric:0,lopsided:0,oneSided:0}, stringLen=[0,0,0,0,0,0]; let longestString=1, skimSamples=0, skimStr3=0, cruiseSamples=0, cruiseStr3=0;
   const timeline=[]; let minTip=1e9, tipTouch=0, skimSteps=0, skimY=0, skimSpd=0, skimFlap=0, skimSpacing=[0,0];
   while(t<total){
@@ -53,6 +53,10 @@ window.__run = function(opts){
       const P_=(aL&&aR)?intPow:edgePow; P_[0]+=S.birds[i].pS||0; P_[1]++; if(aL&&aR) nInt++;
     }
     if(close) closeCalls++;
+    // follow graph: arm ends = birds nobody follows (clean V: 2, echelon: 1); branched = some bird other
+    // than the front one has 2+ followers (a second line splitting off an arm)
+    { const fol=new Array(n).fill(0); for(const b of S.birds) if(b.target!=null) fol[b.target]++;
+      ends+=fol.filter(x=>x===0).length; if(fol.some((x,i)=>x>=2 && S.birds[i].target!=null)) branched++; }
     // arm balance (birds out to each side of the front bird)
     { const mn=Math.min(L,R), mx=Math.max(L,R);
       if(L+R>0){ if(mn===0) balance.oneSided++; else if(mx>=2*mn+1 || mx-mn>=3) balance.lopsided++; else balance.symmetric++; } }
@@ -80,6 +84,7 @@ window.__run = function(opts){
   return {
     shape:pct(shape), armBalance:pct(balance),
     stringPct:{'2':Math.round(100*stringLen[2]/Math.max(1,samples)),'3':Math.round(100*stringLen[3]/Math.max(1,samples)),'4':Math.round(100*stringLen[4]/Math.max(1,samples)),'5+':Math.round(100*stringLen[5]/Math.max(1,samples))}, longestString, string3Cruise:Math.round(100*cruiseStr3/Math.max(1,cruiseSamples)), string3Skim:Math.round(100*skimStr3/Math.max(1,skimSamples)),
+    armEnds:+(ends/Math.max(1,samples)).toFixed(1), branchedPct:Math.round(100*branched/Math.max(1,samples)),
     interiorPct:Math.round(100*interiorAcc/Math.max(1,samples)),
     powerInterior:intPow[1]?+(intPow[0]/intPow[1]).toFixed(1):null, powerEdge:edgePow[1]?+(edgePow[0]/edgePow[1]).toFixed(1):null,
     inlinePct:Math.round(100*rel.inline/Math.max(1,rel.inline+rel.stag)),

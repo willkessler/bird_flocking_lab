@@ -50,7 +50,7 @@ So the goal here is to build the flock up from honest single-bird physics:
 
 | Path | What |
 |---|---|
-| `index.html` | The current version of the lab (v16; the version shows next to the title in the lab's panel), which is where iteration happens |
+| `index.html` | The current version of the lab (v17; the version shows next to the title in the lab's panel), which is where iteration happens |
 | `versions/` | Every earlier build, kept for reference (see below) |
 | `docs/conversation-notes.md` | Notes from the design conversation that produced v1 through v12 |
 | `tools/flock-metrics/` | Headless harness that runs the flock physics and measures emergent structure |
@@ -65,9 +65,10 @@ There are two naming series, in chronological order:
 - `bird-sim-v13` (Nov 2026): the choreography is removed, and formation and leadership emerge from local rules. Larger flocks tend to fill in as diamonds.
 - `bird-sim-v14` (Nov 2026): adds the clear-view rule, so boxed-in birds work their way out to the arms and Vs form on their own.
 - `bird-sim-v15` (Nov 2026): trailing vortices sink behind each bird, and followers may settle up to 1.5 m above or below the flock at whichever height feels more upwash.
-- `bird-sim-v16` (Nov 2026): the flock can skim as low as 0.4 m without hitting the water (shallower wingbeats near the surface, tighter height-holding), and a seventh rule, *follow*, lets single-file strings form when the wake fades. 20 birds by default, and the version is shown in the panel. This is the same as the current `index.html`.
+- `bird-sim-v16` (Nov 2026): the flock can skim as low as 0.4 m without hitting the water (shallower wingbeats near the surface, tighter height-holding), and a seventh rule, *follow*, lets single-file strings form when the wake fades. 20 birds by default, and the version is shown in the panel.
+- `bird-sim-v17` (Nov 2026): rule 2 now chooses a *spot* (an open wingtip spot or the spot straight behind a bird) by the air expected there, instead of following the nearest bird ahead. Arms stay closer to one bird wide, and an eighth rule, *same side*, breaks ties. This is the same as the current `index.html`.
 
-## How the formation emerges (v13–v16)
+## How the formation emerges (v13–v17)
 
 ![Time-lapse: starting from a random cluster, the flock assembles itself into a lopsided V, with the lead (blue) changing hands as birds tire](media/emergent-v14.gif)
 
@@ -75,15 +76,16 @@ There are two naming series, in chronological order:
 
 Up to v12, the V was choreographed. Each bird was assigned a slot (`rank × spacing`) on a fixed arm and held there by a lateral force, and every 16 s the lead was sent to the back in strict rotation. Measured headlessly, v12 was a V 98–100% of the time under every setting tried.
 
-From v13 on, nothing is assigned. Each bird only knows what it can see (birds ahead of and beside it), what it can feel (the air on each wing, its own speed), and its own state (fatigue, fitness, preferred pace). It follows seven rules:
+From v13 on, nothing is assigned. Each bird only knows what it can see (birds ahead of and beside it), what it can feel (the air on each wing, its own speed), and its own state (fatigue, fitness, preferred pace). It follows eight rules:
 
 1. **Pace:** fly at my preferred speed, which drops as I tire.
-2. **Draft:** if a bird is ahead of me, follow the nearest one at my follow distance. If no bird is ahead, I'm leading: follow the coast at my own pace, easing off if the flock behind me falls away.
+2. **Draft:** if a bird is ahead of me, pick a spot to fly in: off the left wingtip, off the right wingtip, or straight behind one of the nearby birds, judged by the rising air I'd expect there, less how far away it is. A spot another bird already holds doesn't count. If nothing decent is open ahead, I also consider spots behind settled birds beside or behind me, and ease back down the formation to reach one. If no bird is ahead, I'm leading: follow the coast at my own pace, easing off if the flock behind me falls away. (Up to v16 this rule was "follow the nearest bird ahead", which let birds settle inside the V and grow second lines off the middle of an arm.)
 3. **Seek air:** slide sideways toward whichever wing feels more rising air or less drag. This is the roll a bird feels when one wing is in upwash. Since v15, a follower also drifts up or down, within 1.5 m of the flock's height, toward whichever height feels more upwash.
 4. **Space:** don't overlap a bird alongside me.
 5. **Pass:** if the bird I'm drafting keeps flying slower than I want to go, pull out and go past it.
 6. **Clear view** (added in v14): if there are birds ahead of me on *both* sides, I'm boxed in, so drift toward the less crowded side and ease back a rank until one side opens up. This is the "visual" hypothesis for V formations: each bird keeps an unobstructed view forward on at least one side.
-7. **Follow** (added in v16): steer gently toward the line of the bird I'm following. It's weak next to the pull of the wake's upwash, so where there's a wake to ride, the wake wins. Where the wake fades, as when skimming low over the water, it's the only thing left steering a bird, and the flock strings out.
+7. **Follow** (added in v16): prefer the spot straight behind a bird a little (the *Follow the bird ahead* slider, in m/s of upwash). Next to the wake's upwash that preference is small, so where there's a wake to ride, the wake wins. Where the wake fades, as when skimming low over the water, it decides, and the flock strings out.
+8. **Same side** (added in v17): if the bird ahead of me sits to the left of the bird it follows, and the left and right spots behind it are about equally good, take the left one (and likewise right). This was a suggestion from watching real pelicans. It turns out the wake already makes this choice almost everywhere: behind a bird on an arm, the same-side spot has about 1.5 m/s more upwash than the other side, which sits behind the bird two places ahead, in its downwash. So the preference (0.15 m/s by default) only decides where the air is nearly even, and it changes the measurements less than they vary from run to run.
 
 "Lead rotation" falls out of these rules plus the physics. Breaking clean air costs more than riding a wake, so whoever is in front tires, slows down, and gets passed by fresher birds, then drops into someone's wake to recover. Several tired birds can drift back together, and which bird takes the point depends on fitness, fatigue, and position.
 
@@ -129,10 +131,11 @@ The first published v13 numbers overstated how often it flew Vs. The shape metri
   | 0.5 m | 8 m | 0.15 | 2, 7 |
   | 0.5 m | 2.5 m | 0.15 | 4 |
 
-  So the water roughly quadruples string-forming, as the wake field predicted. At cruise height the same follow strength (0.3) breaks up the V's, and drafting 8 m back costs more than leading. The default follow strength is 0.15, which leaves cruise formations to the wake. It does shift the default 8-bird flock from mostly V's toward a mix of V's and echelons (V 35–96% of the time across three runs, against 69–100% with the rule off). To watch strings form, set *Skim altitude* to 0.5 m, *Target follow distance* to 8 m and *Follow the bird ahead* to 0.3.
+  So the water roughly quadruples string-forming, as the wake field predicted. (These are v16 numbers; v17's spot rule weakens the effect, see below.) At cruise height the same follow strength (0.3) breaks up the V's, and drafting 8 m back costs more than leading. The default follow strength is 0.15, which leaves cruise formations to the wake. It does shift the default 8-bird flock from mostly V's toward a mix of V's and echelons (V 35–96% of the time across three runs, against 69–100% with the rule off). To watch strings form, set *Skim altitude* to 0.5 m, *Target follow distance* to 8 m and *Follow the bird ahead* to 0.3.
 
   ![Six simulated pelicans skimming half a meter above the water in a single-file line](media/strings-v16.gif)
 
+- **Arms one bird wide (v17).** In photos of real pelican flocks, each arm of a V is a single straight line with nothing inside the V. Up to v16, large sim flocks grew second lines beside an arm and short V's off its tail. The cause was rule 2: a bird squeezed in near the front or inside the V followed the nearest bird ahead, and every open spot ahead of it was in downwash, so it settled there and others lined up behind it. Choosing spots by expected air, and easing back to an arm's end when nothing good is open ahead, fixes most of this. With 8–12 birds, a second line splits off an arm 19–39% of the time, against 33–79% in v16, and the flock averages 2.3–2.9 arm ends (a clean V has 2). With 20 birds it still averages 3.3–4.3 arm ends, and a long arm can hook outward near its tail. v17 also has two regressions: the low-skim strings are weaker (3–8% of skim time, against 7–32% in v16), and birds pass closer to each other (closest pair 0.5–0.8 m, against about 1.1 m). Making the wakes last longer (decay 45–80 m instead of 22 m) didn't change the branching.
 - **Calm air alone doesn't produce strings at cruise height.** Pelicans in very calm air are often seen flying mostly single file, each bird a little above or below the one ahead. In the sim, 20 birds with no wind and almost no turbulence still fly V's 89–94% of the time (99% in the default gusty air), so wind isn't what makes the V's. The few in-line pairs that do form sit 1.5–2 m above or below the bird ahead, which is the vertical offset seen in the field. With a much stronger follow pull (0.45), strings of 3+ appear 24% of the time in calm air, but drafting then costs more than leading. So either real birds in those lines are near the water's ground effect, or they aren't drafting for aerodynamic gain. This is an open question.
 - **Some individuals stay tired.** Less-fit birds can sit near full fatigue even while drafting. That may be realistic, or it may mean the tail of an echelon doesn't pay enough.
 
