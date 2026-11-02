@@ -179,17 +179,20 @@ const P = {
   foldAmount:0.85, maxFoldDeg:95,   // wrist/elbow flex on the upstroke (0 = rigid wing)
   // flap/coast strategy (intermittent flight)
   flapStrategy:'intermittent', paceSpeed:11, followDist:2.5, draftBand:3, coastBeta:10,
-  // flock: V-formation, wingtip wakes, drafting, lead rotation
-  nBirds:8, slotDx:2.2, slotDz:3.4, draft:1, draftStrength:5.0, wakeRange:30, wakeDecay:22, wakeCore:0.35,
+  // flock: wingtip wakes and drafting. No slots are assigned -- each bird picks whom to draft and
+  // slides sideways toward whichever wing feels more lift, so the formation's SHAPE is emergent.
+  nBirds:8, startFormation:'cluster', slotDx:2.2, slotDz:3.4, draft:1, draftStrength:5.0, wakeRange:30, wakeDecay:22, wakeCore:0.35,
   // reduced-drag slipstream ("rubber band"): a bird sitting in the wake ahead flies in co-moving
   // air, so its drag drops and a leader's surge is transmitted down the line as a wave.
   draftPull:4.2, slipWidth:2.2, slipDecay:7,
-  leadRotate:1, rotatePeriod:16, showWakes:1,
+  wakeSeek:0.6, slack:0.8,     // slack: how loosely a follower keeps its spacing before it flaps to correct                // how readily a bird slides toward the better air it feels across its wings
+  // emergent leadership: muscle fatigue + individual variation + "pass a bird that's too slow for me"
+  leadRotate:1, sustainPower:55, fatigueTime:40, fatigueSlow:0.25, passMargin:0.6, individuality:0.12, showWakes:1,
   // muscle (dynamic mode)
   muscleStrength:1.8, momentArm:0.020, muscleOptBeta:-8, muscleWidth:60,
   vmax:30, elevatorFrac:0.3,
   // wind
-  headwind:1.5, crosswind:-0.5, updraft:0, turbulence:2.5,
+  headwind:1.5, crosswind:-0.5, updraft:0, turbulence:1.0,
   // viz: wind vector field
   vWind:1,
   // shoreline & surface skimming (ground-effect hydroplaning led by the lead bird)
@@ -375,10 +378,9 @@ const skyMesh = new THREE.Mesh(skyGeo, skyMat); scene.add(skyMesh);
 /* ------------------------------------------------------------------ BIRD MESH */
 let birds = [];              // the flock: each entry is a state object with a .mesh and .tel
 let focus = 0;               // index of the bird shown in the HUD and followed by the camera
-let order = [];              // formation order (order[0] = current lead); rotated for lead swaps
-let flockT = 0;              // timer for lead rotation
-let flockRefX = 0;           // a SMOOTH reference line advancing at paceSpeed; the lead's nominal x
-let T_flockThrottle = 1;     // 1 = full pace; <1 while the formation is stretched (lead eases)
+let order = [];              // DESCRIPTIVE front-to-back order (order[0] = frontmost bird), recomputed from positions
+let lastFront = -1;          // previous frontmost bird, to flash the lead marker when the point changes hands
+let describeT = 0;           // throttle for describeFlock()
 // surface-skim cycle (the lead's call): cruise -> descend -> skim(near water, ground effect) -> ascend
 let skimState='cruise', skimHold=0, skimCountdown=30, flockBaseAlt=20, skimFreezeX=0, skimFreezeHdg=0;
 const flockRoot = new THREE.Group(); scene.add(flockRoot);
@@ -651,48 +653,71 @@ function makeBirdState(x0, z0){
     beta:0, betaDot:0, phase:Math.random()*6.283, fold:0, t:0, landed:false,
     flapping:true, leadX:x0+P.followDist, baseAlt:P.startAlt, targetAlt:P.startAlt, transT:0, aspS:null, phaseT:0, flaps:0, flapDuty:1,
     wakeWind:V3(), cmdRoll:0, cmdYaw:0, ampScale:1, effort:0,
-    leaderIdx:null, side:0, rank:0, slotDz:0, fixedSide:+1, leadFlash:0,
+    leaderIdx:null, side:0, rank:0, leadFlash:0,
+    // emergent-flock state: who I'm drafting (chosen by me), who I'm overtaking, how tired I am,
+    // and my individual traits (sustainable power and how fast I like to fly)
+    target:null, passing:null, passT:0, passingT:0, lookT:0, vPref:P.paceSpeed,
+    fatigue:0, pS:0, vigor:1, drive:0, wander:0, vzCmd:null,
+    upL:0, upR:0, dfL:0, dfR:0,
     trailR:[], trailL:[],
     tel:{lift:0,thrust:0,drag:0,dragScalar:0,weight:P.mass*G,aoa:0,power:0,cyc:0,cycThrust:0,gap:0,coasting:false,foldDeg:0}
   };
   st.quat.setFromEuler(new THREE.Euler(0,0,a*0.4,'XYZ'));
   return st;
 }
-// Assign each bird a V-formation slot from the current `order` (order[0] = lead). Each bird's
-// ARM (fixedSide) is fixed for life -- only ranks shift when the lead rotates -- so a peel-off
-// never flips a bird across to the far arm (a 2*slotDz*rank lateral slam that would crash it).
-// Within an arm, each bird drafts behind the previous bird on the SAME arm (the lead if it's
-// the first out along that arm).
-function assignFormation(){
-  let lastR=null, lastL=null, rankR=0, rankL=0;
-  for(let k=0;k<order.length;k++){
-    const idx=order[k], st=birds[idx];
-    if(k===0){ st.leaderIdx=null; st.side=0; st.rank=0; st.slotDz=0; }
-    else if(st.fixedSide>0){ rankR++; st.side=+1; st.rank=rankR; st.slotDz=+P.slotDz; st.leaderIdx=(lastR!=null?lastR:order[0]); lastR=idx; }
-    else { rankL++; st.side=-1; st.rank=rankL; st.slotDz=-P.slotDz; st.leaderIdx=(lastL!=null?lastL:order[0]); lastL=idx; }
+// The formation is no longer ASSIGNED. Each bird chooses whom to draft (flockControl); this only
+// DESCRIBES the result for the HUD, colors, camera and the skim call: `order` = birds sorted
+// front-to-back along the flock's mean heading, rank = drafting links back to a self-leading bird,
+// side = which side of the bird it drafts it has settled on.
+function describeFlock(){
+  if(!birds.length) return;
+  let hx=0, hz=0; for(const b of birds){ hx+=b.vel.x; hz+=b.vel.z; }
+  const hn=Math.hypot(hx,hz)||1; hx/=hn; hz/=hn;
+  const along=b=>b.pos.x*hx + b.pos.z*hz;
+  order = birds.map((b,i)=>i).sort((i,j)=>along(birds[j])-along(birds[i]));
+  for(const b of birds){
+    let r=0, k=b;
+    while(k.target!=null && r<birds.length){ k=birds[k.target]; r++; }
+    b.rank=r; b.leaderIdx=b.target;
   }
-  // (Body/wing tinting is handled every frame by updateLeadColors so the light-blue lead — and its
-  // white/blue transition flash — track the current point through rotations.)
+  if(order[0]!==lastFront){ if(lastFront>=0) birds[order[0]].leadFlash=3.0; lastFront=order[0]; }
 }
+function gauss(){ return Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random()); }
 function resetFlock(){
   recomputeDerived();
   for(const st of birds) disposeMesh(st.mesh);
-  birds=[]; order=[]; flockT=0;
+  birds=[]; order=[]; lastFront=-1;
   const n=Math.max(1, Math.round(P.nBirds));
+  const iv=P.individuality||0;
   for(let i=0;i<n;i++){
     const st = makeBirdState(0, 0);
-    st.fixedSide = (i%2===1?+1:-1);      // arm membership, fixed for the bird's life
+    st.id=i;
+    // individuals differ: sustainable power (fitness), preferred pace, and a head start on fatigue
+    st.vigor = clamp(1 + iv*gauss(), 0.6, 1.4);
+    st.drive = clamp(0.5*iv*gauss(), -0.15, 0.15);
+    st.fatigue = Math.random()*0.3;
     st.mesh = makeBirdMesh(i===0);
     birds.push(st); order.push(i);
   }
-  assignFormation();
-  // place each bird at its assigned V slot (lead at origin, arms trailing back and out)
-  for(const st of birds){
-    st.pos.set(-st.rank*P.slotDx, P.startAlt, st.slotDz*st.rank);
+  // Starting arrangement. 'cluster' (default) is a loose random bunch with no structure at all, so
+  // whatever shape the flock settles into is the birds' doing. 'V' and 'line' are for comparison.
+  const placed=[];
+  for(let i=0;i<n;i++){
+    const st=birds[i];
+    if(P.startFormation==='V'){ const r=Math.ceil(i/2), s=(i%2?1:-1); st.pos.set(-r*P.slotDx, P.startAlt, i?s*r*P.slotDz:0); }
+    else if(P.startFormation==='line'){ st.pos.set(-i*P.slotDx, P.startAlt, 0); }
+    else {
+      let x=0, z=0;
+      for(let tries=0; tries<200; tries++){
+        x=-Math.random()*n*P.slotDx*0.9; z=(Math.random()-0.5)*n*P.slotDz*0.45;
+        if(placed.every(p=>Math.hypot(p[0]-x,p[1]-z) > 2.6*P.span)) break;
+      }
+      placed.push([x,z]); st.pos.set(x, P.startAlt+(Math.random()-0.5), z);
+    }
     st.leadX = st.pos.x + P.followDist;
   }
+  describeFlock();
   focus=0; state=birds[0]; telemetry=state.tel;
-  flockRefX = birds[0].pos.x;             // reference line starts at the lead
   // reset the surface-skim cycle to a fresh high cruise
   skimState='cruise'; skimHold=0; flockBaseAlt=P.startAlt; skimCountdown=P.skimPeriod*(0.6+Math.random()*0.8);
   buildShadows();
@@ -770,9 +795,10 @@ function computeForces(st){
   const inv=_qi.copy(st.quat).invert();
   const wind=windAt(st.pos);
   if(st.wakeWind){                       // add the wake: vertical upwash always; forward slipstream gated so it can't overtake
-    wind.x += st.wakeWind.x * (st.draftGate==null?1:st.draftGate);
+    const g = (st.draftGate==null?1:st.draftGate);   // the slipstream is horizontal (along the drafted bird's heading)
+    wind.x += st.wakeWind.x * g;
     wind.y += st.wakeWind.y;
-    wind.z += st.wakeWind.z;
+    wind.z += st.wakeWind.z * g;
   }
   // air velocity relative to COM, in BODY frame
   const relAir=V3().subVectors(wind, st.vel).applyQuaternion(inv);
@@ -964,17 +990,12 @@ function computeForces(st){
     netWorld.y += P.mass*(12.5*d + (st.vel.y<0 ? -5.0*st.vel.y : 0));
   }
 
-  if(st.slotZv!=null){
+  if(st.vzCmd!=null){
+    // Sideways station: flockControl asks for a lateral velocity (follow the bird ahead's drift, plus
+    // whatever slide toward better air it wants). A firm, capped side-velocity trim stands in for the
+    // bank-and-sideslip a bird would use -- capped so a big slide can't spin up a lift-robbing sideslip.
     const W=P.mass*G, capZ=0.52*W;
-    // Cascade with a capped closing SPEED: a large slot error must not spin up a big sideways
-    // velocity -- that sideslip tilts the relative wind, robs the wings of vertical lift, and
-    // the bird dives. Capping lateral speed keeps sideslip small, so even a big reposition
-    // (a peeled-off lead sliding out to a tail slot) stays level.
-    // Gentle position pull with firm side-velocity damping: keeps station while damping the
-    // sideslip that would feed dihedral roll (Dutch roll). Kept modest so it doesn't itself
-    // pump the lateral mode.
-    const vzT = clamp(0.55*(st.slotZv - st.pos.z), -3.0, 3.0);   // track the rotating slot through coast turns (a turn sweeps it in z faster than the old 2 m/s cap could ever close)
-    const fz = P.mass*2.5*(vzT - st.vel.z);
+    const fz = P.mass*2.5*(st.vzCmd - st.vel.z);
     netWorld.z += clamp(fz, -capZ, capZ);
   }
 
@@ -1055,8 +1076,9 @@ function muscleCapacity(st){
   const flDep=Math.exp(-Math.pow((st.beta*RAD - P.muscleOptBeta)/P.muscleWidth, 2));
   const flEle=Math.exp(-Math.pow((st.beta*RAD + P.muscleOptBeta)/P.muscleWidth, 2));
   const hill=v => v>=0 ? clamp((P.vmax - v)/(P.vmax + 3*v), 0, 1) : 1.4;  // concentric / eccentric
-  const capDep=Math.max(0, derived.Fmax*P.momentArm*flDep*hill(-st.betaDot));
-  const capEle=Math.max(0, derived.Fmax*P.momentArm*P.elevatorFrac*flEle*hill(st.betaDot));
+  const tired=1 - 0.4*(st.fatigue||0);   // a fatigued pectoralis simply can't pull as hard
+  const capDep=Math.max(0, tired*derived.Fmax*P.momentArm*flDep*hill(-st.betaDot));
+  const capEle=Math.max(0, tired*derived.Fmax*P.momentArm*P.elevatorFrac*flEle*hill(st.betaDot));
   return {dep:capDep, ele:capEle};
 }
 
@@ -1114,144 +1136,169 @@ function stepBird(st, dt){
   }
   // running energy tally (compare lead vs drafting followers) + cycle-avg thrust
   st.effort = (st.effort||0) + (T.power||0)*dt;
+  // FATIGUE: a smoothed (~4 s) flap power above this bird's sustainable level builds fatigue; below it
+  // the bird recovers. Breaking clean air at the front costs more than riding a wake, so whoever is
+  // out front tires -- nothing tells it to; it's just paying the bill.
+  st.pS += ((T.power||0) - st.pS)*Math.min(1, dt/4);
+  const pSus = Math.max(1, P.sustainPower*(st.vigor||1));
+  st.fatigue = clamp(st.fatigue + dt*(st.pS/pSus - 1)/Math.max(P.fatigueTime,1), 0, 1);
+  T.fatigue = st.fatigue;
   T.cyc += dt;
   T.cycThrust = 0.98*T.cycThrust + 0.02*(T.thrust||0);
   st.t += dt;
 }
 
 /* ---------------------------------------------------- FLOCK CONTROL (per bird) */
-// Decide, for one bird, whether to flap or coast and how to steer, from its
-// V-formation slot. The lead keeps station with a virtual pace-setter; followers
-// key off the ACTUAL bird ahead, so a leader's flap surge opens the gap and trips
-// the next bird a beat later -- the drafting wave runs backward through the V.
+// Every decision here is LOCAL to one bird: what it can see (birds ahead of it, birds right beside
+// it), what it can feel (the lift on each wing, its own speed) and its own state (fatigue, traits).
+// There are no slots, no arms, no assigned leader and no swap timer. Five rules:
+//  1. PACE     -- I want to fly at my own preferred speed, which drops as I tire.
+//  2. DRAFT    -- if there's a bird ahead of me, I follow the nearest one at my follow distance.
+//                 If there isn't, I'm leading: I fly my pace along the coast (easing off if the
+//                 flock behind me is dropping away).
+//  3. SEEK AIR -- I slide sideways toward whichever wing feels more lift / less drag (the roll a
+//                 bird feels when one wing sits in upwash). Where birds settle -- V, echelon,
+//                 single file -- is wherever the wake field has its ridges.
+//  4. SPACE    -- don't overlap a bird alongside me.
+//  5. PASS     -- if the bird I'm drafting keeps flying slower than I want to go, I pull out and
+//                 go by. A tiring leader slows down, fresher birds go past, and it drops back into
+//                 someone's wake to recover. That is the whole lead "rotation".
+const _sL=V3(), _sR=V3();
 function flockControl(st, dt){
   const T=st.tel, w0=windAt(st.pos);
   const asp=V3().subVectors(st.vel,w0).length();
   st.aspS=(st.aspS==null)?asp:st.aspS+(asp-st.aspS)*0.02;
-  st.gsS=(st.gsS==null)?st.vel.x:st.gsS+(st.vel.x-st.gsS)*0.02;   // smoothed groundspeed (pace is a groundspeed)
+  const gs=Math.hypot(st.vel.x, st.vel.z);                     // horizontal groundspeed
+  st.gsS=(st.gsS==null)?gs:st.gsS+(gs-st.gsS)*0.02;
   st.phaseT=(st.phaseT||0)+dt;
-
-  const lead = st.leaderIdx==null;
-  const leadBird = birds[order[0]];
-  // Fore/aft the WAVE trigger is the gap to the ACTUAL bird immediately ahead (chained). But a pure
-  // chain is string-unstable -- drift amplifies down the arm until a bird is ejected -- so each bird
-  // also knows its slot on a SMOOTH flock line (flockRefX, cruising at pace). That absolute error
-  // only biases burst TIMING (below), never adds a force: a bird behind the line bursts a touch
-  // sooner / more often, one ahead glides longer, so the flock stays bounded without being "pushed".
-  // ---- COAST STEERING: the flock TURNS to follow the shore (banks into the bend) instead of crabbing
-  // sideways. The lead points along the coast tangent (+ a cross-track nudge back onto the line) and
-  // banks into it; followers align to that flock heading and still hold their slot laterally. During a
-  // skim the heading is FROZEN straight (skimFreezeHdg) so they hydroplane along the surf, not weaving.
-  // Coast-following is ACTIVE in every phase (including skims). The old code FROZE the heading at the
-  // coast tangent for the whole ~20 s of a dip so the flock "wouldn't weave" -- but the coast keeps
-  // curving while the frozen heading is straight, so the flock flew off the line by tens of metres each
-  // dip (measured: cross-track error swinging to -90 m, i.e. Will's "getting farther from shore"). The
-  // gentle damped steering below banks far too little to dip a wingtip at skim altitude, so keeping it
-  // on through the dip holds the line without weaving.
-  const psiTan = Math.atan(coastFollowSlope(leadBird.pos.x));
   const _fwd=V3(1,0,0).applyQuaternion(st.quat);
   const heading=Math.atan2(_fwd.z,_fwd.x);
-  let absSlotZ;
+  const fx=Math.cos(heading), fz=Math.sin(heading);          // my forward axis in (x,z)
+  const nx=-fz, nz=fx;                                       // my lateral axis (+z when heading +x)
+  const sp=P.span;
+  const rel=b=>{ const dx=b.pos.x-st.pos.x, dz=b.pos.z-st.pos.z; return [dx*fx+dz*fz, dx*nx+dz*nz, b.pos.y-st.pos.y]; };
+
+  // ---- 1. PACE
+  st.vPref = P.paceSpeed*(1+(st.drive||0))*(1 - P.fatigueSlow*st.fatigue);
+
+  // ---- 2. DRAFT: (re)choose whom to follow a few times a second -- the nearest bird ahead of me in
+  // a forward cone -- with hysteresis so I don't flicker between two similar choices.
+  const usable=(a,c,dy)=> a>0.6 && a<P.wakeRange && Math.abs(c) < 0.5*a + 3*sp && Math.abs(dy)<6;
+  let tgt = st.target!=null ? birds[st.target] : null;
+  if(tgt && !usable(...rel(tgt))){ tgt=null; st.target=null; }
+  st.lookT -= dt;
+  if(st.lookT<=0){
+    st.lookT = 0.3 + 0.2*Math.random();
+    let best=null, bd=Infinity;
+    for(const b of birds){
+      if(b===st || b.id===st.passing) continue;
+      const [a,c,dy]=rel(b); if(!usable(a,c,dy)) continue;
+      const d=Math.hypot(a,c); if(d<bd){ bd=d; best=b; }
+    }
+    if(best && best!==tgt){
+      const dCur = tgt ? Math.hypot(...rel(tgt).slice(0,2)) : Infinity;
+      if(bd < 0.8*dCur){ tgt=best; st.target=best.id; }
+    }
+  }
+
+  // ---- 5. PASS (decided before steering so it takes effect this step)
+  if(st.passing!=null){
+    const pb=birds[st.passing]; st.passingT+=dt;
+    if(!pb || rel(pb)[0] < -1.0 || st.passingT>20) st.passing=null;   // I'm past it (or gave up)
+  }
+  if(P.leadRotate && tgt && skimState==='cruise' && st.passing==null){
+    const slowBy = st.vPref - (tgt.gsS!=null?tgt.gsS:gs);
+    st.passT = slowBy > P.passMargin ? st.passT + dt : Math.max(0, st.passT - 2*dt);
+    if(st.passT > 3){                       // it's been too slow for me for a while: go around it
+      st.passing=tgt.id; st.passingT=0; st.passT=0;
+      st.target=null; tgt=null; st.lookT=0;  // next tick I'll pick someone further up to follow, if anyone
+    }
+  } else st.passT=0;
+  const lead = !tgt;
+
+  // ---- heading: a bird with nobody ahead follows the coast; a follower lines up with the bird it
+  // follows (blended with the coast it can also see). Banked, coordinated turns.
+  const psiTan = Math.atan(coastFollowSlope(st.pos.x));
   if(lead){
-    // Gentle, well-damped cross-track nudge onto the coast line: P on the offset, D on the z-rate so
-    // the lead eases onto the line instead of overshooting and weaving. Capped small so the heading is
-    // a lazy coastal turn (<=~20 deg total), not a slalom.
-    const crossTrack = coastFollow(st.pos.x) - st.pos.z;   // >0 = need +z
+    const crossTrack = coastFollow(st.pos.x) - st.pos.z;      // >0 = need +z
     const xt = clamp(0.05*crossTrack - 0.14*st.vel.z, -0.14, 0.14);
     st.hdgCmd = psiTan + xt;
-    absSlotZ = null;                                     // lead steers by TURNING -> no sideways trim force
   } else {
-    st.hdgCmd = psiTan;                                  // followers point along the flock heading
-    // ROTATE the V into the flock heading so the whole formation banks through the coast bend as one
-    // rigid shape. The slot is (along = -rank*slotDx behind, cross = side*slotDz*rank abeam) rotated by
-    // the flock heading psi -- forward=(cos,sin), side=(-sin,cos) in (x,z). The old axis-aligned slot
-    // (lead.z + side*slotDz*rank, no rotation) is what smeared the flock sideways in every turn: a bird
-    // sitting correctly behind the bird ahead then had the WRONG commanded z, so the lateral trim
-    // dragged it out of formation (measured 6-10 m of lateral blow-out per bird in a 20 deg bend).
-    const cs=Math.cos(psiTan), sn=Math.sin(psiTan);
-    absSlotZ = leadBird.pos.z + (-st.rank*P.slotDx)*sn + (st.side*P.slotDz*st.rank)*cs;
+    st.hdgCmd = psiTan + 0.5*wrapPi(Math.atan2(tgt.vel.z, tgt.vel.x) - psiTan);
   }
-  st.bankCmd = clamp(1.3*wrapPi(st.hdgCmd - heading), -0.5, 0.5);   // bank INTO the turn (coordinated)
-  const smoothSlotX = flockRefX - st.rank*P.slotDx;      // this bird's nominal x on the flock line
-  const absErr = smoothSlotX - st.pos.x;                 // >0 = behind the line
-  let gap, desiredGap, aheadVx;
-  if(lead){
-    st.leadX = flockRefX;                                // lead's pace-setter IS the flock line
-    gap = flockRefX - st.pos.x; desiredGap = 0;          // the lead holds the line (no draft -> works hardest)
-    aheadVx = P.paceSpeed;                               // the line it chases advances at the flock pace
-  } else {
-    const ld = birds[st.leaderIdx] || leadBird;
-    gap = ld.pos.x - st.pos.x; desiredGap = P.followDist; // hold THIS gap behind the bird immediately
-    aheadVx = ld.gsS!=null ? ld.gsS : ld.vel.x;           // ahead ("Target follow distance"), matching its speed
-  }
-  st.slotX=smoothSlotX; st.slotZv=absSlotZ; T.gap=gap;
-  const zErr = (absSlotZ==null?0:absSlotZ - st.pos.z);
+  st.bankCmd = clamp(1.3*wrapPi(st.hdgCmd - heading), -0.5, 0.5);
 
-  // DRAFT GATE (stops the lead being overtaken): the slipstream's forward push is what let drafting
-  // followers ride PAST the bird ahead and, chained up the arm, past the no-draft lead itself -- so
-  // the "lead" ended up mid-pack. Gate that forward push by fore/aft spacing: full draft when the
-  // bird sits at or behind its slot, fading to zero as it closes within minGap of the bird ahead.
-  // The line still gets pulled along (a lagging bird catches up), but no one can shoot past the bird
-  // in front, so the chain -- rooted at the lead -- keeps the lead at the point.
-  if(lead){ st.draftGate = 1; st.brake = 0; }   // lead speed in a skim is held by a dedicated governor (computeForces)
+  // ---- 3 & 4. LATERAL: seek better air, keep spacing
+  // What my wings feel: the difference in rising air across my span -- the wind itself (gusts,
+  // updrafts) plus the upwash from birds ahead -- and the slipstream's sideways slope, each weighed by
+  // what it's worth in effort (rising air tilts lift forward ~W*w/V; co-moving air cuts drag ~2*D*u/V
+  // with D ~ W/8 -- so per m/s, slipstream is worth ~1/4 of upwash). Leaders feel the air too.
+  const off=0.5*sp;
+  _sL.set(st.pos.x - nx*off, st.pos.y, st.pos.z - nz*off);
+  _sR.set(st.pos.x + nx*off, st.pos.y, st.pos.z + nz*off);
+  let feel = windAt(_sR).y - windAt(_sL).y;
+  if(P.draft) feel += (st.upR - st.upL) + 0.25*P.draftPull*(st.dfR - st.dfL);
+  let vlat = P.wakeSeek*feel;
+  // a little individual wander -- sensing noise, gusts on the body -- so ties break and nothing is
+  // perfectly symmetric
+  st.wander += -0.5*st.wander*dt + 0.35*Math.sqrt(dt)*gauss();
+  vlat += 0.4*st.wander;
+  if(tgt){
+    // tether: slid clean out of the bird's wake (nothing left to feel)? drift back toward it
+    const c=rel(tgt)[1], reach=2.2*sp+1.0;
+    if(Math.abs(c)>reach) vlat += 0.4*(Math.abs(c)-reach)*Math.sign(c);
+    st.side = c<0 ? +1 : -1;                                  // which side of the bird ahead I'm on
+  } else st.side=0;
+  for(const b of birds){                                      // don't overlap a bird alongside
+    if(b===st) continue;
+    const [a,c,dy]=rel(b), clear=2.1*sp+0.3;
+    if(Math.abs(a)<2.2 && Math.abs(c)<clear && Math.abs(dy)<2){
+      const s = Math.abs(c)>0.05 ? -Math.sign(c) : (st.id<b.id?-1:1);
+      vlat += s*1.6*(clear-Math.abs(c))*(1-Math.abs(a)/2.2);
+    }
+  }
+  vlat = clamp(vlat, -2.5, 2.5);
+  st.vzCmd = tgt ? tgt.vel.z + vlat*nz : (Math.abs(vlat)>0.05 ? st.vel.z + vlat*nz : null);
+
+  // ---- fore/aft: hold my follow distance behind the bird I chose, or (leading) fly my own pace
+  let gap, desiredGap, aheadV;
+  if(lead){
+    let dBehind=Infinity;
+    for(const b of birds){ if(b===st) continue; const [a,c]=rel(b); if(a<-0.3) dBehind=Math.min(dBehind, Math.hypot(a,c)); }
+    const wait = isFinite(dBehind) ? clamp(1 - 0.05*(dBehind - 2*P.followDist), 0.8, 1) : 1;
+    aheadV = st.vPref*wait; gap=0; desiredGap=0;
+  } else {
+    gap = rel(tgt)[0]; desiredGap = P.followDist;
+    aheadV = tgt.gsS!=null ? tgt.gsS : Math.hypot(tgt.vel.x, tgt.vel.z);
+  }
+  T.gap = gap;
+
+  // DRAFT GATE: the slipstream's forward push fades as I close within minGap of the bird ahead, so
+  // riding its wake can't carry me straight through it. Plus an auto-flare when overrunning.
+  if(lead){ st.draftGate = 1; st.brake = 0; }
   else {
     const minGap=0.8;
     st.draftGate = clamp((gap - minGap)/Math.max(desiredGap - minGap, 0.1), 0, 1);
-    // auto-flare when overrunning the bird ahead: 0 at/behind the slot, ramping to full as the gap
-    // closes toward minGap. Plus a touch keyed to the closing rate so it anticipates. This is what
-    // guarantees the chain order (and the lead at the point), not an average that occasionally slips.
     const over = (desiredGap - gap)/Math.max(desiredGap - minGap, 0.1);
-    const closingAhead = st.gsS - aheadVx;               // >0 = self faster than the bird ahead (gaining)
-    st.brake = clamp(0.9*over + 0.3*closingAhead, 0, 1);
+    st.brake = clamp(0.9*over + 0.3*(st.gsS - aheadV), 0, 1);
   }
 
-  // Brief climb-out ONLY during an actual peel-off (lead rotation on) and only for a genuinely big
-  // relocation -- otherwise an ordinary straggler would wrongly climb out of the draft and never
-  // rejoin. Gated off in normal formation flight.
-  // The whole flock holds ONE base altitude set by the lead's skim cycle (flockBaseAlt), so a dip to
-  // the surface and the climb back happen together, led from the front.
-  const base = flockBaseAlt;
-  // The climb-out-to-reposition (+4 m) is ONLY for a lead-rotation peel-off in CRUISE. During a skim
-  // the whole flock must hold the shared base altitude and descend / ride / climb together, so it is
-  // suppressed there -- otherwise a strayed bird climbs to base+4 (=~6 m while the lead skims at 2 m),
-  // drops out of ground effect, slows, falls further behind and never rejoins the dip, so the lead
-  // ends up skimming off alone (measured: all followers ejected 6-8 m above the lead in a skim).
-  const far = (skimState==='cruise') && P.leadRotate && !lead && P.nBirds>1 && (Math.abs(absErr) > P.slotDx*2.5 || Math.abs(zErr) > P.slotDz*2.0);
-  st.transT = far ? 1.5 : (skimState==='cruise' ? Math.max(0, (st.transT||0) - dt) : 0);  // no leftover climb-out bleeds into a dip
-  st.targetAlt = base + (st.transT>0 ? 4 : 0);
+  // Everyone holds the shared base altitude of the skim cycle (the front bird's call).
+  st.targetAlt = flockBaseAlt;
 
   if(P.flapStrategy==='intermittent'){
     const line=st.targetAlt||P.startAlt;
-    // PD STATION-KEEPING. The old controller reacted only to how far BEHIND its slot a bird had
-    // fallen, so a bird coasted until the gap was big, then flapped hard, charged through the slot
-    // and sagged back -- the "clump and separate" surging Will saw, and a lead that steadily pulled
-    // away because followers reacted too late. Now each bird also watches its CLOSING RATE on the
-    // bird ahead (the D term): it flaps when it is behind OR falling behind, and eases the instant
-    // it is on-station AND speed-matched -- so it settles onto an even, close gap instead of
-    // overshooting. The gap error still lags naturally down the line, so the drafting wave survives.
-    const gapErr   = gap - desiredGap;                    // >0 = fallen behind the slot
-    const closing  = aheadVx - st.gsS;                    // >0 = the bird/line ahead is pulling away
-    const spdDef   = P.paceSpeed - st.gsS;                // >0 = below the flock pace (groundspeed)
-    // During a SKIM, anchor each bird to the ABSOLUTE flock line (smoothSlotX, which tracks the lead)
-    // rather than trusting only the chained gap to the bird ahead: the fast ground-effect coast makes
-    // the pure chain string-UNSTABLE (a small lag amplifies down the arm -- the deepest bird ended up
-    // 40 m back), so a common-reference term keeps the file rigid through the dip. Off in cruise, where
-    // the chained gap + drafting wave is what we want.
-    const absTerm  = (skimState!=='cruise' && !lead) ? 0.8*clamp(absErr, -3, 8) : 0;  // >0 = behind the line -> flap
-    const demand   = 1.0*gapErr + 1.3*closing + 0.15*Math.max(0, spdDef-0.5) + absTerm;
-    const slow     = st.aspS < 0.78*P.paceSpeed;          // stall safety (airspeed)
-    // water safety: keep well clear of the surface at cruise, but during a skim the whole point is
-    // to ride LOW, so the floor drops with the commanded (skim) altitude instead of forcing a climb.
+    // PD station-keeping: flap when behind OR falling behind; glide when on-station and speed-matched.
+    const demand = lead ? 1.6*(aheadV - st.gsS)
+                        : 1.0*(gap - desiredGap) + 1.3*(aheadV - st.gsS);
+    // a follower tolerates some slack in its spacing (chasing every gust-driven wobble would burn the
+    // very energy drafting saves); whoever is leading just tracks its own pace
+    const deadband = lead ? 0.25 : P.slack;
+    const slow     = st.aspS < 0.78*P.paceSpeed;              // stall safety (airspeed)
     const floor    = clamp(line*0.5, 0.7, 2.5);
     const absFloor = st.pos.y < floor;
-    // Flap-driven groundspeed cap -- keep it RELATIVE to the bird ahead, not the fixed cruise pace. In a
-    // surface skim the whole file coasts fast in ground effect (~16 m/s); a follower that slips out of the
-    // draft must be able to flap up to the bird ahead's speed to rejoin. The old fixed 1.25*pace cap
-    // (13.75) stranded it below the lead's coast speed, so rank-1 fell 12-26 m back every dip and the lead
-    // skimmed off alone. +1.5 lets it close the gap without rocketing past (the brake still prevents overrun).
-    const speedCap = lead ? 1.25*P.paceSpeed : Math.max(1.25*P.paceSpeed, aheadVx + 1.5);
-    const tooFast  = st.gsS > speedCap;                   // hard groundspeed cap -> never run away
-    const deadband = 0.25;                                // hold tight, but still glide when on-station & matched
+    const speedCap = lead ? 1.15*st.vPref : Math.max(1.25*P.paceSpeed, aheadV + 1.5);
+    const tooFast  = st.gsS > speedCap;
     if((demand > deadband && !tooFast) || slow || absFloor){
       st.flapping = true;
       st.ampScale = clamp(0.3 + 0.42*demand + (slow?0.4:0) + (absFloor?0.5:0), 0.3, 1);
@@ -1262,92 +1309,74 @@ function flockControl(st, dt){
   } else {
     st.flapping=true; st.ampScale=1; T.coasting=false;
   }
+  // tired muscles can't drive a full beat (muscle mode gets this through muscleCapacity instead)
+  if(P.mode==='prescribed' && st.flapping) st.ampScale = Math.min(st.ampScale, 1 - 0.4*st.fatigue);
   st.flapDuty=0.996*(st.flapDuty==null?1:st.flapDuty)+0.004*(st.flapping?1:0);
-
-  // The bank is now REAL (physical roll into the turn via st.bankCmd, applied in the attitude loop),
-  // so no cosmetic lean is added here. Followers still hold their slot with the damped lateral force.
   st.cmdRoll = 0;
 }
 
 /* ---------------------------------------------------- WINGTIP WAKES / DRAFT */
-// Two coupled wake effects from the birds AHEAD, both fed into a bird's local wind (st.wakeWind):
+// Two wake effects from the birds AHEAD, fed into a bird's local wind (st.wakeWind):
 //
-//  1. VERTICAL (wakeWind.y) -- wingtip vortices. A bird sitting outboard of another's tip rides
-//     that wing's UPWASH (a lift bonus); between the tips it's downwash. This is the V benefit.
+//  1. VERTICAL (wakeWind.y) -- wingtip vortices. A bird outboard of another's tip rides that
+//     wing's UPWASH (a lift bonus); between the tips it's downwash. Sampled at the middle of each
+//     half-wing and at the body, so a bird straddling a tip feels it unevenly -- and that left/right
+//     difference (upL/upR) is what it steers by.
 //
-//  2. HORIZONTAL (wakeWind.x) -- the reduced-drag SLIPSTREAM. Every bird drags a slug of air along
-//     with it (its momentum wake). A bird tucked into that co-moving air behind another meets a
-//     LOWER relative headwind, so its drag drops sharply -- it glides far on little effort, and the
-//     SAME wingbeat now nets more forward force (Will's "rank-3 flaps but doesn't accelerate" was
-//     exactly a missing slipstream). Because the channel is anchored to the bird ahead and fades
-//     with the fore/aft gap, a leader's surge sweeps the low-drag channel back over the next bird,
-//     whose next beat then bites harder and pulls it up -- the effort/acceleration runs down the
-//     line as a wave. That is the "rubber band" connecting the file: no direct forward force (that
-//     would be "stepping on the gas"); the coupling emerges from recovered wake momentum + drag.
+//  2. HORIZONTAL (wakeWind.x/z) -- the reduced-drag SLIPSTREAM: the slug of co-moving air every
+//     bird drags behind it, along its own heading. A bird tucked in behind meets a lower relative
+//     headwind, so its drag drops; a leader's surge sweeps the channel back over the next bird.
+//
+// Both are laid out in the frame of the bird making the wake (behind = against ITS heading), so
+// they stay correct when the flock is turning along the coast.
 function computeWakes(){
   const rho=P.rho, Vref=Math.max(P.paceSpeed,3), rc=Math.max(P.wakeCore,0.05);
   const bprime=(Math.PI/4)*2*P.span, tipZ=P.span*0.9;
   const L=P.mass*G, Gam=L/(rho*Vref*bprime);   // bound-circulation estimate (each bird ~ its weight)
   const k=Gam/(2*Math.PI);
   const sw2=Math.max(P.slipWidth,0.2)**2, sld=Math.max(P.slipDecay,0.5);
+  for(const o of birds){ const h=Math.hypot(o.vel.x,o.vel.z)||1; o._hx=o.vel.x/h; o._hz=o.vel.z/h; }
+  const off=0.5*P.span;                         // sample point at the middle of each half-wing
+  const uS=[0,0,0], dS=[0,0,0];
   for(const st of birds){
     if(!st.wakeWind) st.wakeWind=V3();
     st.wakeWind.set(0,0,0); st.tel.upwash=0; st.draftFactor=0; st.tel.draft=0;
+    st.upL=st.upR=st.dfL=st.dfR=0;
     if(!P.draft) continue;
-    let wy=0, df=0;
+    const nx=-st._hz, nz=st._hx;
+    uS.fill(0); dS.fill(0); let fdx=0, fdz=0;
     for(const other of birds){
       if(other===st) continue;
-      const dx=other.pos.x - st.pos.x;          // >0 : 'other' is ahead
-      if(dx<=0.05 || dx>P.wakeRange) continue;
-      const decay=Math.exp(-dx/Math.max(P.wakeDecay,1));
       const dy=st.pos.y - other.pos.y;
-      // vertical tip-vortex upwash/downwash
-      for(const s of [+1,-1]){                   // the two wingtips of 'other'
-        const zc=other.pos.z + s*tipZ;
-        const dz=st.pos.z - zc;
-        wy += s*k*dz/(dz*dz + dy*dy + rc*rc)*decay;   // outboard of a tip = upwash
+      for(let s=0;s<3;s++){                     // 0 = my -side half-wing, 1 = body, 2 = my +side half-wing
+        const lo=(s-1)*off;
+        const ddx=st.pos.x+nx*lo - other.pos.x, ddz=st.pos.z+nz*lo - other.pos.z;
+        const back=-(ddx*other._hx + ddz*other._hz);          // >0 : this point is behind 'other'
+        if(back<=0.05 || back>P.wakeRange) continue;
+        const lz=-ddx*other._hz + ddz*other._hx;             // sideways offset in other's frame
+        const decay=Math.exp(-back/Math.max(P.wakeDecay,1));
+        const dyI=st.pos.y + other.pos.y;                   // to the vortex's mirror image below the sea surface
+        for(const sg of [+1,-1]){                            // the two wingtips of 'other'
+          const dz=lz - sg*tipZ;
+          uS[s] += sg*k*dz/(dz*dz + dy*dy + rc*rc)*decay;    // outboard of a tip = upwash
+          // GROUND EFFECT ON THE WAKE: near the water each tip vortex has an opposite-signed image vortex,
+          // which cancels much of the upwash beside it. Skimming low, there's little V niche left to find.
+          if(P.groundEffect) uS[s] -= sg*k*dz/(dz*dz + dyI*dyI + rc*rc)*decay;
+        }
+        const wake=Math.exp(-(lz*lz + dy*dy)/sw2)*Math.exp(-back/sld);
+        if(wake>dS[s]){ dS[s]=wake; if(s===1){ fdx=other._hx; fdz=other._hz; } }   // ride the deepest one
       }
-      // reduced-drag slipstream: deepest where this bird sits squarely in the co-moving wake
-      // (small lateral+vertical offset from the bird ahead) and close behind (fades downstream).
-      const dzc=st.pos.z - other.pos.z;
-      const lat=Math.exp(-(dzc*dzc + dy*dy)/sw2);
-      const wake=lat*Math.exp(-dx/sld);
-      if(wake>df) df=wake;                        // ride the single deepest wake, don't stack them
     }
-    // Clamp the downwash side hard (a mispositioned bird shouldn't get slammed down and thrown out
-    // of formation) while letting the upwash benefit be strong -- so a well-placed follower's drag
-    // is largely cancelled and it can glide a long way on the draft.
-    st.wakeWind.y = clamp(P.draftStrength*wy, -0.4, 3.5);
+    // Clamp the downwash side hard (a mispositioned bird shouldn't get slammed down out of the flock)
+    // while letting the upwash benefit be strong.
+    st.wakeWind.y = clamp(P.draftStrength*(uS[0]+uS[1]+uS[2])/3, -0.4, 3.5);
+    st.upL = clamp(P.draftStrength*uS[0], -3, 3.5);
+    st.upR = clamp(P.draftStrength*uS[2], -3, 3.5);
     st.tel.upwash = st.wakeWind.y;
-    // co-moving forward air: a slug of the flight-direction airflow that follows the bird ahead.
-    // Reduces the follower's relative airspeed -> lower drag, and couples the line (rubber band).
-    df=clamp(df,0,1); st.draftFactor=df; st.tel.draft=df;
-    st.wakeWind.x = P.draftPull*df;
-  }
-}
-
-/* ---------------------------------------------------- LEAD ROTATION (peel-off) */
-// Breaking the headwind is the tiring job, so the lead hands it off. Every rotatePeriod the tired
-// lead PEELS OFF and drops to the very BACK of the formation, and every other bird moves up one
-// slot -- a true round-robin. Cycling the whole line (rather than the old trade with a single
-// wingman, which just ping-ponged the point between the same two birds) means every bird takes a
-// turn at the front over time, so no pair burns out -- which is exactly why wild flocks keep
-// rotating the lead. Only the relieved bird makes a big move (the long drift to the tail); the
-// rest shift by a single slot. Each then flies to its new slot under the normal station-keeping.
-function leadRotation(dt){
-  if(!P.leadRotate || birds.length<2) return;
-  if(skimState!=='cruise') return;          // don't hand off the lead mid dip-and-rise; the bird
-                                            // that called the skim sees it through (flockT pauses too)
-  flockT += dt;
-  if(flockT >= P.rotatePeriod){
-    flockT = 0;
-    order.push(order.shift());               // old lead -> back; everyone else advances one slot
-    assignFormation();
-    birds[order[0]].leadFlash = 3.0;         // new lead flashes white/blue while it takes the point
-    // Let the just-relieved bird climb clear and drift back to the tail instead of barging straight
-    // through the flock on its way down the line.
-    const relieved = birds[order[order.length-1]];
-    if(relieved){ relieved.transT = Math.max(relieved.transT||0, 2.5); }
+    const df=clamp(dS[1],0,1); st.draftFactor=df; st.tel.draft=df;
+    st.dfL=dS[0]; st.dfR=dS[2];
+    st.wakeWind.x = P.draftPull*df*fdx;
+    st.wakeWind.z = P.draftPull*df*fdz;
   }
 }
 
@@ -1356,7 +1385,7 @@ function leadRotation(dt){
 // effect -- scanning for fish -- then climb back to cruise. It's the LEAD's decision and the whole
 // flock follows, so this drives ONE shared base altitude (flockBaseAlt) that every bird holds its
 // slot at. cruise (up high) -> descend -> skim (ride the surface for skimDuration) -> ascend. The
-// lead is NOT swapped until the full dip-and-rise completes (see leadRotation).
+// birds don't jockey for position until the full dip-and-rise completes (see PASS in flockControl).
 function updateSkim(dt){
   const cruiseA=P.startAlt, rate=2.2;      // gentle ~2 m/s climb/descent of the shared base altitude
   if(!P.skimEnable){ skimState='cruise'; flockBaseAlt += (cruiseA-flockBaseAlt)*Math.min(1,dt*1.5); return; }
@@ -1387,28 +1416,11 @@ function updateSkim(dt){
 function stepFlock(dt){
   windT += dt;                             // advances the gust field
   updateSkim(dt);                          // advance the shared dip/rise altitude
-  // The smooth flock line cruises at the pace -- but a real lead doesn't sprint off and leave the
-  // flock strung out behind it; it sets a pace the group can actually hold. So THROTTLE the line's
-  // advance whenever the formation is stretched beyond its nominal length: the lead eases, the tail
-  // catches up, and the line stays tight and evenly spaced. (This, plus the PD followers, is what
-  // fixes "the lead gets way ahead" and the clump/separate surging.)
-  if(birds.length){
-    const leadX=birds[order[0]].pos.x;
-    let tailX=Infinity, maxRank=0;
-    for(const b of birds){ if(b.pos.x<tailX) tailX=b.pos.x; if(b.rank>maxRank) maxRank=b.rank; }
-    const nominalLen=Math.max(maxRank*P.followDist, 0.1);
-    const stretch=(leadX - tailX) - nominalLen;               // >0 = strung out beyond the nominal V
-    const throttle=clamp(1 - stretch/(1.5*P.followDist), 0.15, 1);  // ease the pace as it stretches
-    flockRefX += P.paceSpeed*throttle*dt;
-    flockRefX = clamp(flockRefX, leadX-1.5, leadX + P.followDist + P.draftBand);
-    T_flockThrottle = throttle;
-  } else {
-    flockRefX += P.paceSpeed*dt;
-  }
   computeWakes();
   for(const st of birds) flockControl(st, dt);
   for(const st of birds) stepBird(st, dt);
-  leadRotation(dt);
+  describeT -= dt;
+  if(describeT<=0){ describeT=0.1; describeFlock(); }
 }
 // back-compat single entry point (render loop + headless tests call this)
 function integrate(dt){ stepFlock(dt); }
@@ -1458,9 +1470,10 @@ function stepBody(st, f, dt){
 const SCHEMA=[
  {title:'Presets & mode', open:true, custom:'presets'},
  {title:'Flock & drafting', open:true, items:[
-   {k:'nBirds',label:'Number of birds',min:1,max:15,step:1,unit:'',hint:'rebuilds the flock in a fresh V'},
-   {k:'slotDx',label:'Slot spacing — along',min:1,max:5,step:0.1,unit:'m',hint:'the V’s initial rank spacing (the held gap is “Target follow distance” below)'},
-   {k:'slotDz',label:'Slot spacing — across',min:0.6,max:4,step:0.1,unit:'m',hint:'V arm width; how far outboard each bird sits'},
+   {k:'nBirds',label:'Number of birds',min:1,max:15,step:1,unit:'',hint:'rebuilds the flock in its starting arrangement'},
+   {k:'slotDx',label:'Start spacing — along',min:1,max:5,step:0.1,unit:'m',hint:'only lays out the starting flock; after that each bird finds its own place'},
+   {k:'slotDz',label:'Start spacing — across',min:0.6,max:4,step:0.1,unit:'m',hint:'only lays out the starting flock'},
+   {k:'wakeSeek',label:'Wake seeking',min:0,max:2,step:0.05,unit:'×',hint:'how readily a bird slides toward the wing that feels more lift. 0 = it stays wherever it is'},
    {k:'draftStrength',label:'Draft upwash strength',min:0,max:4,step:0.1,unit:'×',hint:'lift bonus a bird gets in the wake ahead'},
    {k:'draftPull',label:'Slipstream pull',min:0,max:8,step:0.1,unit:'m/s',hint:'co-moving air in the wake — reduces a follower’s drag and couples the line (the "rubber band")'},
    {k:'slipWidth',label:'Slipstream width',min:0.6,max:4,step:0.1,unit:'m',hint:'how far off to the side the low-drag channel reaches'},
@@ -1468,7 +1481,13 @@ const SCHEMA=[
    {k:'wakeRange',label:'Wake reach',min:5,max:60,step:1,unit:'m'},
    {k:'wakeDecay',label:'Wake decay length',min:4,max:40,step:1,unit:'m',hint:'how far downstream the vortex upwash persists'},
    {k:'wakeCore',label:'Vortex core radius',min:0.1,max:1,step:0.05,unit:'m',hint:'smaller = a sharper, stronger upwash peak'},
-   {k:'rotatePeriod',label:'Lead-swap period',min:4,max:40,step:1,unit:'s',hint:'how often the lead peels off to the back'},
+ ]},
+ {title:'Fatigue & leadership', open:true, items:[
+   {k:'sustainPower',label:'Sustainable flap power',min:20,max:120,step:1,unit:'W',hint:'flying harder than this builds fatigue; easier than this recovers it'},
+   {k:'fatigueTime',label:'Fatigue time scale',min:5,max:200,step:1,unit:'s',hint:'how quickly fatigue builds and recovers'},
+   {k:'fatigueSlow',label:'Tired birds slow down',min:0,max:0.6,step:0.01,unit:'',hint:'how much a fully tired bird lowers its preferred pace'},
+   {k:'passMargin',label:'Passing impatience',min:0.1,max:3,step:0.05,unit:'m/s',hint:'how much slower than my own pace the bird ahead must fly before I go around it'},
+   {k:'individuality',label:'Individual variation',min:0,max:0.3,step:0.01,unit:'',hint:'spread of fitness and preferred pace between birds (applies on restart)'},
  ]},
  {title:'Mass & skeleton', open:true, items:[
    {k:'mass',label:'Total mass',min:0.01,max:12,step:0.01,unit:'kg'},
@@ -1499,8 +1518,8 @@ const SCHEMA=[
  ]},
  {title:'Coasting & drafting', open:true, items:[
    {k:'paceSpeed',label:'Flock pace speed',min:5,max:25,step:0.5,unit:'m/s',hint:'the leader/flock cruise the bird keeps station with'},
+   {k:'slack',label:'Station-keeping slack',min:0.1,max:3,step:0.05,unit:'',hint:'how much spacing error a follower tolerates before flapping to correct — tight costs energy'},
    {k:'followDist',label:'Target follow distance',min:1,max:12,step:0.5,unit:'m',hint:'the even gap each bird holds behind the one ahead'},
-   {k:'draftBand',label:'Draft envelope',min:0.5,max:8,step:0.5,unit:'m',hint:'coast until this far behind the leader, then flap to catch up'},
    {k:'coastBeta',label:'Coast wing angle',min:-10,max:20,step:1,unit:'°',hint:'dihedral the wing holds while gliding'},
  ]},
  {title:'Shoreline & surface skims', open:false, items:[
@@ -1531,7 +1550,7 @@ const SCHEMA=[
    {k:'headwind',label:'Headwind',min:-15,max:20,step:0.5,unit:'m/s',hint:'+ opposes flight, raises airspeed & lift'},
    {k:'crosswind',label:'Crosswind',min:-15,max:15,step:0.5,unit:'m/s'},
    {k:'updraft',label:'Updraft',min:-5,max:8,step:0.5,unit:'m/s'},
-   {k:'turbulence',label:'Turbulence / gusts',min:0,max:4,step:0.1,unit:'',hint:'0 = steady air (best for tuning); higher = shifting gusts the flock must adapt to'},
+   {k:'turbulence',label:'Turbulence / gusts',min:0,max:4,step:0.1,unit:'',hint:'0 = steady air (best for tuning); higher = shifting gusts the flock must adapt to. Above ~1.5 drafting stops paying, so fatigue no longer drives who leads'},
    {k:'rho',label:'Air density',min:0.6,max:1.4,step:0.02,unit:'kg/m³'},
    {k:'geStrength',label:'Ground-effect strength',min:0,max:2,step:0.05,unit:'×'},
  ]},
@@ -1611,9 +1630,18 @@ function buildPresetSection(host){
   };
   stratWrap.appendChild(sl); stratWrap.appendChild(ssel); host.appendChild(stratWrap);
 
+  // starting arrangement (only the start -- the birds organize themselves from there)
+  const fWrap=document.createElement('div'); fWrap.style.marginTop='10px';
+  const fl=document.createElement('label'); fl.className='ctl'; fl.style.margin='0';
+  fl.innerHTML='<span style="color:var(--dim);font-size:11.5px">Starting arrangement</span>';
+  const fsel=document.createElement('select');
+  fsel.innerHTML='<option value="cluster">Loose random cluster</option><option value="V">Symmetric V</option><option value="line">Single file</option>';
+  fsel.value=P.startFormation; fsel.onchange=()=>{ P.startFormation=fsel.value; resetState(); };
+  fWrap.appendChild(fl); fWrap.appendChild(fsel); host.appendChild(fWrap);
+
   const tg=document.createElement('div'); tg.style.marginTop='10px';
   const toggles=[['vForces','Force vectors'],['vFlow','Airflow'],['vTrail','Wingtip wakes'],
-                 ['vWind','Wind vectors (green=up, red=down)'],['draft','Drafting upwash'],['leadRotate','Rotate the lead'],
+                 ['vWind','Wind vectors (green=up, red=down)'],['draft','Drafting upwash'],['leadRotate','Fatigue-driven passing (emergent lead changes)'],
                  ['skimEnable','Surface skims (ground-effect fishing)']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
@@ -1651,6 +1679,7 @@ const STATS=[
   ['fold','Wing fold','°'],['flapamp','Flap amplitude','°'],
   ['gap','Following gap','m'],['duty','Flap duty','%'],
   ['upwash','Wake upwash','m/s'],['bird','Focus bird',''],
+  ['fatigue','Fatigue','%'],['vpref','Preferred pace','m/s'],
 ];
 function buildHUD(){
   statGrid.innerHTML='';
@@ -1947,7 +1976,9 @@ function updateHUD(){
   setStat('flapamp',fmt(Math.sqrt(2*Math.max(0,SMV.bsq))));
   setStat('gap', telemetry.gap==null?'–':fmt(telemetry.gap));
   setStat('duty', fmt(100*(state.flapDuty||0)));
-  const role = (state.leaderIdx==null)?'LEAD':(state.side>0?'R':'L')+state.rank;
+  const role = (state.passing!=null)?'PASS':(state.leaderIdx==null)?(order[0]===focus?'LEAD':'SOLO'):('→#'+state.leaderIdx);
+  setStat('fatigue', fmt(100*(state.fatigue||0)));
+  setStat('vpref', fmt(state.vPref||P.paceSpeed));
   setStat('upwash', (telemetry.upwash>=0?'+':'')+fmt(telemetry.upwash||0));
   setStat('bird', '#'+focus+' '+role);
   // flap / coast state badge
@@ -1958,7 +1989,7 @@ function updateHUD(){
   const sk=document.getElementById('skimTag');
   if(sk){ if(skimState==='cruise') sk.textContent='';
     else { const lbl={descend:'Dropping to the surface',skim:'Skimming the surface in ground effect',ascend:'Climbing back to cruise'}[skimState];
-      sk.innerHTML='<span style="color:#8fe9df">'+lbl+'</span> (lead stays until the dip completes). '; } }
+      sk.innerHTML='<span style="color:#8fe9df">'+lbl+'</span> (no passing until the dip completes). '; } }
   const W=P.mass*G;
   const setBar=(id,val,ref)=>{
     const f=document.getElementById('bar_'+id), v=document.getElementById('barv_'+id);
@@ -1986,12 +2017,14 @@ function updateHUD(){
   if(birds.length>1 && isFollower){
     const up=telemetry.upwash||0;
     const draftTxt = up>0.05 ? ' Riding <span style="color:#8fe9df">+'+fmt(up)+' m/s upwash</span> off the bird ahead.'
-                             : (P.draft? ' (out of the upwash — nudge slotDz to catch it)':'');
-    if(telemetry.coasting) msg+='<span style="color:#9aa7ff">Coasting</span> in slot, '+fmt(telemetry.gap||0)+' m back.'+draftTxt;
-    else msg+='<span style="color:var(--accent)">Flapping</span> to hold slot ('+fmt(telemetry.gap||0)+' m back).'+draftTxt;
+                             : (P.draft? ' (feeling for the upwash)':'');
+    if(telemetry.coasting) msg+='<span style="color:#9aa7ff">Coasting</span> '+fmt(telemetry.gap||0)+' m behind bird #'+state.leaderIdx+'.'+draftTxt;
+    else msg+='<span style="color:var(--accent)">Flapping</span> to keep up with bird #'+state.leaderIdx+' ('+fmt(telemetry.gap||0)+' m back).'+draftTxt;
+  } else if(birds.length>1 && state.passing!=null){
+    msg+='<span style="color:#ffcf6e">Passing</span> bird #'+state.passing+' — it was flying slower than this bird wants to go.';
   } else if(birds.length>1){
-    msg+='<span style="color:#8fe9df">Lead bird</span> — setting the pace at '+fmt(P.paceSpeed)+' m/s. '
-       +(P.leadRotate?'Peels off to the back every '+fmt(P.rotatePeriod)+' s.':'Lead rotation off.');
+    msg+='<span style="color:#8fe9df">Nobody ahead</span> — flying its own pace of '+fmt(state.vPref||P.paceSpeed)+' m/s, '+fmt(100*(state.fatigue||0))+'% fatigued. '
+       +(P.leadRotate?'Fresher birds will go past once it tires and slows.':'Passing is off, so it keeps the point.');
   } else if(P.flapStrategy==='intermittent' && telemetry.coasting){
     msg+='<span style="color:#9aa7ff">Coasting</span> — '+fmt(telemetry.gap||0)+' m behind the leader, gliding and bleeding speed. Beats again at '+fmt(P.followDist+P.draftBand)+' m.';
   } else if(P.flapStrategy==='intermittent'){

@@ -1,0 +1,7 @@
+[
+  {"name": "default, random-cluster start", "secs": 300, "timeline": 40},
+  {"name": "calm air, no skims", "secs": 300, "P": {"turbulence": 0, "skimEnable": 0}},
+  {"name": "passing off (no fatigue-driven lead changes)", "secs": 300, "P": {"leadRotate": 0}},
+  {"name": "gusty air (v12 default turbulence)", "secs": 300, "P": {"turbulence": 2.5}},
+  {"name": "15 birds", "secs": 300, "P": {"nBirds": 15}}
+]
