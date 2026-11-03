@@ -1,0 +1,10 @@
+[
+  {"name": "default", "secs": 300},
+  {"name": "calm air, no skims", "secs": 300, "P": {"turbulence": 0, "skimEnable": 0}},
+  {"name": "gusty air", "secs": 300, "P": {"turbulence": 2.5}},
+  {"name": "onshore crosswind 3 m/s (toward the hills)", "secs": 300, "P": {"crosswind": 3}},
+  {"name": "low skims 0.5 m (jetties)", "secs": 300, "P": {"skimAlt": 0.5, "skimPeriod": 12, "skimDuration": 15}},
+  {"name": "updraft 0, calm", "secs": 240, "P": {"turbulence": 0, "skimEnable": 0, "updraft": 0}},
+  {"name": "updraft 1.5, calm", "secs": 240, "P": {"turbulence": 0, "skimEnable": 0, "updraft": 1.5}},
+  {"name": "quirk 0 (identical birds)", "secs": 300, "P": {"quirk": 0}}
+]

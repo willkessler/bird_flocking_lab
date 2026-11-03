@@ -16,6 +16,7 @@ window.__run = function(opts){
   const shape={line:0,V:0,echelon:0,filled:0,mixed:0}, rel={inline:0,stag:0}, relSk={inline:0,stag:0};
   const intPow=[0,0], edgePow=[0,0], inDy=[0,0]; let ends=0, branched=0; let interiorAcc=0;
   const balance={symmetric:0,lopsided:0,oneSided:0}, stringLen=[0,0,0,0,0,0]; let longestString=1, skimSamples=0, skimStr3=0, cruiseSamples=0, cruiseStr3=0;
+  let obsN=0, obsHit=0, minObs=1e9, splitN=0, fDy=[0,0];
   const timeline=[]; let minTip=1e9, tipTouch=0, skimSteps=0, skimY=0, skimSpd=0, skimFlap=0, skimSpacing=[0,0];
   while(t<total){
     S.integrate(dt); t+=dt;
@@ -53,6 +54,11 @@ window.__run = function(opts){
       const P_=(aL&&aR)?intPow:edgePow; P_[0]+=S.birds[i].pS||0; P_[1]++; if(aL&&aR) nInt++;
     }
     if(close) closeCalls++;
+    // obstacles (jetties, hills): body height above whatever is under it, where there is something
+    if(typeof obstacleH==='function') for(const b of S.birds){ const h=obstacleH(b.pos.x,b.pos.z); if(h>0.01){ obsN++; const cl=b.pos.y-h; minObs=Math.min(minObs,cl); if(cl<0.5) obsHit++; } }
+    // split: biggest along-gap between consecutive birds; height of each follower above the bird it follows
+    { const s=[...A].sort((p,q)=>p-q); let g=0; for(let i=1;i<n;i++) g=Math.max(g,s[i]-s[i-1]); if(g>3*P.followDist) splitN++;
+      for(const b of S.birds) if(b.target!=null){ fDy[0]+=b.pos.y-S.birds[b.target].pos.y; fDy[1]++; } }
     // follow graph: arm ends = birds nobody follows (clean V: 2, echelon: 1); branched = some bird other
     // than the front one has 2+ followers (a second line splitting off an arm)
     { const fol=new Array(n).fill(0); for(const b of S.birds) if(b.target!=null) fol[b.target]++;
@@ -94,5 +100,7 @@ window.__run = function(opts){
     powerSolo:avg(pr.solo), powerDraft:avg(pr.draft),
     powerByPhase:Object.fromEntries(Object.entries(pr).filter(([k])=>k.includes('_')).map(([k,v])=>[k,avg(v)])),
     skim: skimSteps? {minTip:+minTip.toFixed(2), tipTouchPct:+(100*tipTouch/(skimSteps*n)).toFixed(2), meanY:+(skimY/(skimSteps*n)).toFixed(2), meanSpeed:+(skimSpd/(skimSteps*n)).toFixed(1), flapPct:Math.round(100*skimFlap/(skimSteps*n))} : null,
+    splitPct:Math.round(100*splitN/Math.max(1,samples)), followDy:fDy[1]?+(fDy[0]/fDy[1]).toFixed(2):null,
+    obstacle: obsN? {overPct:+(100*obsN/(samples*n)).toFixed(1), minClear:+minObs.toFixed(2), hitPct:+(100*obsHit/obsN).toFixed(1)} : null,
     minY:+minY.toFixed(2), minPair:+minPair.toFixed(2), closeCallPct:+(100*closeCalls/Math.max(1,samples)).toFixed(1), maxSpreadAlong:+maxSpread.toFixed(1), timeline};
 };
