@@ -53,6 +53,7 @@ So the goal here is to build the flock up from honest single-bird physics:
 | `index.html` | The current version of the lab (v18; the version shows next to the title in the lab's panel), which is where iteration happens |
 | `versions/` | Every earlier build, kept for reference (see below) |
 | `docs/conversation-notes.md` | Notes from the design conversation that produced v1 through v12 |
+| `docs/next-steps.md` | Where the investigation stands (V vs single file) and the experiments to try next |
 | `tools/flock-metrics/` | Headless harness that runs the flock physics and measures emergent structure |
 | `media/` | README assets |
 
