@@ -45,6 +45,29 @@ What this says:
 - **The cost isn't the default.** The v18 suite at 0.2 (seed 1) splits the flock 21–49% of the time, against about 1–5% in v18. V's at default fall to 33%, and the closest pair dips to 0.18 m. Birds hang back rather than pay to close up.
 - **Next fix:** make closing a gap *within* the flock free, so a hole costs nothing to fill, while still charging for overtaking past birds to a far arm.
 
+### v20: overtaking cost by birds passed, and the role of lead changes
+
+v20 charges for overtaking only: `reachCost` per 4 birds passed on the way to a spot (birds ahead of me, short of the spot, inside the corridor between my track and the spot), capped at 4. Closing a gap with nobody in between is free. The flock now holds together at any cost: main group 92–99%, splits 4–15% at 0.25–0.5.
+
+But the V's are no longer lopsided. Long-arm share is 0.55–0.73 at costs 0.25–0.5 (about 0.63 on average, the same as no cost), and joiners take the same side as the previous joiner only by chance. Cost 1.0 goes back to echelons, with splits of 17–33%. So in v19 the lopsidedness came from charging for *any* forward catch-up, not specifically for overtaking.
+
+The deciding factor turned out to be **lead changes** (seeds 1–3, 20 birds):
+
+| Start | Lead rotation | Result |
+|---|---|---|
+| Random cluster | off | Balanced V's 100% of the time (long-arm share 0.53–0.63); drafting 29–31 W |
+| Join one at a time | off | A single echelon in 5 of 6 runs, every follower on one side (costs 0 and 0.5 alike); one run formed a 0.74 V |
+| Join one at a time | on | Lopsided V's: one timeline held 13–14 left against 4–6 right for 300 s while the front swapped between two birds |
+
+The picture:
+
+- **Birds arriving one at a time from behind all extend the same arm,** forming a pure echelon. That's Will's arrival-order idea, in a stronger form than expected.
+- **The second arm comes from many birds reaching the front at once** (the cluster start), **or from lead changes.** A tired leader drops back, the spot off the other wingtip opens up, and each change seeds or feeds the short arm. How lopsided a V ends up depends on how often the lead changes compared with how fast birds join.
+- **The overtaking cost hardly matters once closing a gap is free.** It stays as a slider, default 0.
+- **Lead rotation costs the drafters:** 46 W with rotation against 30 W without, because the passing keeps reshuffling the formation.
+
+Still to try: vary the join interval (`joinGap`) and the pace of fatigue (how often the lead changes) to see whether the arm ratio follows their ratio, and compare against photo counts.
+
 ## Hypothesis 1: arrival order sets the shape of the V
 
 This came from Will. A bird that catches up at the **front** finds the lead's left wingtip already taken by #2. It takes the right wingtip, which starts the second arm. A bird that catches up from **behind** slots in at the end of the nearest line, on the same side as #2, #3, #4 and so on. A gap that opens in the middle of a line gets filled by a bird just behind it.
@@ -102,6 +125,16 @@ Updrafts are probably not the answer. v18 makes the wake rise with steady lift, 
    - Check whether staggered single file appears on its own; `inlinePct`, `inlineDy` and `string3Cruise` already measure it.
    - Report drafting power against leading power, to see what lines cost.
 4. **Wide spacing at cruise.** Raise `followDist` to 5–8 m with `skimEnable` set to 0, and see whether lines replace V's once the wake fades. Partly tried in v16: at cruise, follow strength 0.3 broke up V's, and 8 m drafting cost more than leading.
+
+## Next feature: "finger of God" mode (requested Nov 2026)
+
+A tool for messing with the flock, to test how it reforms.
+
+- **Controls:** a toggle, "Finger of God (click to disturb the flock)", and a *Disturbance strength* slider.
+- **Aiming:** a click casts a ray from the camera through the mouse position. The disturbance is centred on the point on that ray closest to the nearest bird. Clicks far from any bird do nothing. Dragging still orbits the camera.
+- **The disturbance:** a sudden pocket of air, about 1–1.5 s long and a few wingspans across, that blows outward and down from its centre. It fades with distance and time, so birds near the centre are hit hard and those at the edge barely notice. It's added to `windAt`, so it acts through the aerodynamics and the birds' own controllers have to recover. Rings on the water show where it hit.
+- **Rate limit:** a burst of up to 5 disturbances, then a cool-down of about 8 s before all 5 come back. A small charge indicator shows what's left. Burst size and cool-down are settings.
+- **Harness hook:** script the same disturbance with a fixed seed, then measure recovery time and the shape the flock reforms into.
 
 ## Open issues carried over from v18
 

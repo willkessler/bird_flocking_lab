@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v19</title>
+<title>Bird Flight Lab v20</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -89,7 +89,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v19</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v20</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -1227,12 +1227,20 @@ function stepBird(st, dt){
 // and sometimes misjudges which spot is best.
 const _sL=V3(), _sR=V3();
 // Cost of getting to a spot (dx,dz away from me, in b's flight frame). Distance costs a little either
-// way; the part I must gain AHEAD costs extra when reachCost>0, because closing it means flying faster
-// than the flock, in clean air, while overtaking. Sideways or dropping back is cheap. Only the first 10 m
-// count: that is overtaking within the flock; catching up from further back is rule 8's (cohesion) job.
-function reachCost(dx, dz, b){
-  const ahead = dx*b._hx + dz*b._hz;
-  return 0.03*Math.hypot(dx,dz) + P.reachCost*clamp(ahead, 0, 10)/10;
+// way. Overtaking costs extra when reachCost>0: every bird I'd have to pass on the way (ahead of me, short
+// of the spot, inside the corridor between my track and the spot) means flying faster than the flock in
+// clean air, alongside it. Closing a gap with nobody in between is free -- that's how the flock stays
+// together. reachCost per 4 birds passed (about 10 m of overtaking at the default spacing), capped at 4.
+function reachCost(dx, dz, b, st){
+  const hx=b._hx, hz=b._hz, sA=dx*hx+dz*hz, sC=-dx*hz+dz*hx;
+  let base = 0.03*Math.hypot(dx,dz);
+  if(!(P.reachCost>0) || sA<1) return base;
+  const cLo=Math.min(0,sC)-1.5, cHi=Math.max(0,sC)+1.5;
+  let n=0;
+  for(const w of birds){ if(w===st || w===b) continue;
+    const ex=w.pos.x-st.pos.x, ez=w.pos.z-st.pos.z, a=ex*hx+ez*hz, c=-ex*hz+ez*hx;
+    if(a>0.5 && a<sA-0.5 && c>cLo && c<cHi && ++n>=4) break; }
+  return base + P.reachCost*n/4;
 }
 function flockControl(st, dt){
   const T=st.tel, w0=windAt(st.pos);
@@ -1310,7 +1318,7 @@ function flockControl(st, dt){
           if(Math.abs(al)<1.5 && Math.abs(la)<1.0){ taken=true; break; } }
         if(taken) continue;
         let score = upwashAt(sx, b.pos.y, sz, b._hx, b._hz, st)
-                  - reachCost(sx-st.pos.x, sz-st.pos.z, b)
+                  - reachCost(sx-st.pos.x, sz-st.pos.z, b, st)
                   + (side===0 ? P.pursuit : 0) + (side!==0 && side===bSide ? P.lineUp : 0)
                   + (b===tgt && side===st.spotSide ? 0.1 : 0)                 // don't flicker between near-equal spots
                   + 0.05*side*qk('side') + 0.04*P.quirk*gauss();              // my favourite side, and a misjudgement now and then
@@ -1770,7 +1778,7 @@ const SCHEMA=[
    {k:'clearView',label:'Keep a clear view',min:0,max:2,step:0.05,unit:'m/s',hint:'a bird with others ahead on BOTH sides drifts toward the open side and eases back. 0 = birds stay boxed in and the flock fills in as a diamond'},
    {k:'lineUp',label:'Same side as the bird ahead',min:0,max:0.6,step:0.05,unit:'m/s',hint:'if the bird ahead of me sits to the left of the bird it follows, I lean toward its left wingtip too (and likewise right) -- a tie-breaker worth this many m/s of upwash, so better air still wins. 0 = off'},
    {k:'lookAhead',label:'Look up the line',min:0,max:1,step:0.05,unit:'',hint:'how much a follower paces itself off the next one or two birds up its line (their speed, and whether it is the right number of gaps behind them) rather than only the bird it follows. 0 = only the bird directly ahead: in a long line every surge grows as it passes back, and the tail birds wear themselves out chasing it'},
-   {k:'reachCost',label:'Cost of overtaking to a spot',min:0,max:1,step:0.05,unit:'m/s',hint:'a spot I would have to fly ahead to reach costs this much upwash per 10 m of overtaking (clean air, extra speed), up to 10 m. 0 = distance hardly matters, so a late bird crosses to the far arm; ~0.2 = it takes the nearest arm end, and V\'s grow lopsided like real ones; 0.5+ = mostly echelons'},
+   {k:'reachCost',label:'Cost of overtaking to a spot',min:0,max:1,step:0.05,unit:'m/s per 4 birds',hint:'a spot I would have to overtake other birds to reach costs this much upwash per 4 birds passed (clean air, extra speed, alongside them), up to 4. Closing a gap with nobody in between is free. 0 = distance hardly matters, so a late bird crosses to the far arm; ~0.2 = it takes the nearest arm end, and V\'s grow lopsided like real ones; 0.5+ = mostly echelons'},
    {k:'personalSpace',label:'Personal space',min:0,max:2.5,step:0.05,unit:'m',hint:'the clear air a bird keeps between itself and any other bird. A bird that sees it is about to cut across another gives way: the one behind holds back, slides off and steps up or down. 0 = only the old side-by-side overlap check'},
    {k:'cohesion',label:'Stay with the flock',min:0,max:1.5,step:0.05,unit:'',hint:'a bird with nobody close ahead that can still see birds further ahead speeds up and steers toward them; a bird leading with a big hole behind it eases off so the stragglers can catch up. 0 = a split flock stays split'},
    {k:'quirk',label:'Individual quirks',min:0,max:1.5,step:0.05,unit:'',hint:'how much birds differ in their choices: each has its own preferred spacing, how far out on the wingtip it sits, a favourite side and height, and it sometimes picks a slightly worse spot. 0 = identical birds and a mechanically perfect V'},
