@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v18</title>
+<title>Bird Flight Lab v19</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -89,7 +89,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v18</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v19</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -191,7 +191,11 @@ const P = {
   lineUp:0.15,                 // m/s of preference for the wingtip on the same side the bird ahead sits of its own leader
   lookAhead:0.5,               // how much a follower paces off the next birds up its line, not just the one it follows (0 = only that one)
   personalSpace:1.0,           // m of clear air a bird keeps between its wingtips/body and any other bird's (Boids separation)
-  cohesion:0.5,                // how hard a bird that has fallen away from the flock works to close the gap and rejoin
+  reachCost:0,                 // extra cost (m/s of upwash per 10 m) of a spot I must overtake to reach, in clean air
+  joinGap:12,                  // 'trickle' start: metres between birds that join one at a time
+  cohesion:0.5,
+  chaseRange:150,              // m: how far ahead a straggler can still see (and chase) the flock
+  chaseBoost:0.12,             // extra speed (fraction of pace, per unit cohesion) a straggler flies to catch up                // how hard a bird that has fallen away from the flock works to close the gap and rejoin
   quirk:0.5,                   // how much individual birds differ in their choices (spacing, side, height, hesitation); 0 = identical robots
   avoidObstacles:1,            // birds see the jetties and hills ahead and climb over or turn away from them
   clearView:0.8,               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
@@ -204,7 +208,7 @@ const P = {
   // wind
   headwind:1.5, crosswind:-0.5, updraft:0, turbulence:1.0,
   // viz: wind vector field
-  vWind:1,
+  vWind:0,
   // shoreline & surface skimming (ground-effect hydroplaning led by the lead bird)
   skimEnable:1, skimAlt:2.0, tipClear:0.2, skimPeriod:30, skimDuration:8,
   // launch
@@ -701,11 +705,20 @@ function describeFlock(){
   }
   if(order[0]!==lastFront){ if(lastFront>=0) birds[order[0]].leadFlash=3.0; lastFront=order[0]; }
 }
+// Seeded randomness for repeatable runs: seedRandom(n) swaps Math.random for a small PRNG
+// (mulberry32); seedRandom(null) restores the browser's. The page honours ?seed=n in its URL.
+const _rand0=Math.random;
+function seedRandom(s){
+  if(s==null || s===''){ Math.random=_rand0; return; }
+  let a=(+s)>>>0;
+  Math.random=function(){ a=(a+0x6D2B79F5)|0; let t=Math.imul(a^(a>>>15),1|a); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; };
+}
+try{ const q=new URLSearchParams(location.search).get('seed'); if(q!=null) seedRandom(q); }catch(e){}
 function gauss(){ return Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random()); }
 function resetFlock(){
   recomputeDerived();
   for(const st of birds) disposeMesh(st.mesh);
-  birds=[]; order=[]; lastFront=-1;
+  birds=[]; order=[]; lastFront=-1; windT=0;
   const n=Math.max(1, Math.round(P.nBirds));
   const iv=P.individuality||0;
   for(let i=0;i<n;i++){
@@ -727,6 +740,11 @@ function resetFlock(){
     const st=birds[i];
     if(P.startFormation==='V'){ const r=Math.ceil(i/2), s=(i%2?1:-1); st.pos.set(-r*P.slotDx, P.startAlt, i?s*r*P.slotDz:0); }
     else if(P.startFormation==='line'){ st.pos.set(-i*P.slotDx, P.startAlt, 0); }
+    else if(P.startFormation==='trickle'){
+      // birds that left the roost one at a time: strung out far behind each other, scattered sideways,
+      // so each catches up to a flock that is already there (join order = bird number)
+      st.pos.set(-i*P.joinGap, P.startAlt+(Math.random()-0.5), i ? (Math.random()-0.5)*16 : 0);
+    }
     else {
       let x=0, z=0;
       for(let tries=0; tries<200; tries++){
@@ -1208,6 +1226,14 @@ function stepBird(st, dt){
 // And no two birds are alike (quirk): each has its own spacing, wingtip reach, favourite side and height,
 // and sometimes misjudges which spot is best.
 const _sL=V3(), _sR=V3();
+// Cost of getting to a spot (dx,dz away from me, in b's flight frame). Distance costs a little either
+// way; the part I must gain AHEAD costs extra when reachCost>0, because closing it means flying faster
+// than the flock, in clean air, while overtaking. Sideways or dropping back is cheap. Only the first 10 m
+// count: that is overtaking within the flock; catching up from further back is rule 8's (cohesion) job.
+function reachCost(dx, dz, b){
+  const ahead = dx*b._hx + dz*b._hz;
+  return 0.03*Math.hypot(dx,dz) + P.reachCost*clamp(ahead, 0, 10)/10;
+}
 function flockControl(st, dt){
   const T=st.tel, w0=windAt(st.pos);
   const asp=V3().subVectors(st.vel,w0).length();
@@ -1250,9 +1276,15 @@ function flockControl(st, dt){
   if(st.lookT<=0){
     st.lookT = (0.3 + 0.2*Math.random())*(1 + 0.8*P.quirk*((st.qr ? st.qr.look : 0.5) - 0.5));   // some birds dither, some are quick
     const cands=[]; let anyAhead=false;
+    // the flock is ahead of me past a gap (I'm at the front of a group that has fallen behind)? Then I
+    // rejoin it rather than dropping back to follow a bird behind me
+    let minAhead=Infinity;
+    for(const b of birds){ if(b===st) continue; const a=rel(b)[0]; if(a>0.6) minAhead=Math.min(minAhead,a); }
+    const rejoin = minAhead > 3*P.followDist && minAhead < P.wakeRange;
     for(const b of birds){
       if(b===st || b.id===st.passing) continue;
       const [a,c,dy]=rel(b);
+      if(rejoin && a<0.6) continue;
       const isAhead=ahead(a,c,dy); if(isAhead) anyAhead=true;
       const settled = b.target==null || b.wakeWind.y > 0.25;
       if(isAhead || (near(a,c,dy) && settled)) cands.push([Math.hypot(a - P.followDist, c), b, isAhead]);
@@ -1278,7 +1310,7 @@ function flockControl(st, dt){
           if(Math.abs(al)<1.5 && Math.abs(la)<1.0){ taken=true; break; } }
         if(taken) continue;
         let score = upwashAt(sx, b.pos.y, sz, b._hx, b._hz, st)
-                  - 0.03*Math.hypot(sx-st.pos.x, sz-st.pos.z)
+                  - reachCost(sx-st.pos.x, sz-st.pos.z, b)
                   + (side===0 ? P.pursuit : 0) + (side!==0 && side===bSide ? P.lineUp : 0)
                   + (b===tgt && side===st.spotSide ? 0.1 : 0)                 // don't flicker between near-equal spots
                   + 0.05*side*qk('side') + 0.04*P.quirk*gauss();              // my favourite side, and a misjudgement now and then
@@ -1329,7 +1361,7 @@ function flockControl(st, dt){
   let chase=null, chaseA=0, chaseC=0, chaseD=Infinity;
   if(lead && P.cohesion>0){
     for(const b of birds){ if(b===st || b.id===st.passing) continue;
-      const [a,c]=rel(b); if(a<2 || a>150) continue;
+      const [a,c]=rel(b); if(a<2 || a>P.chaseRange) continue;
       const d=Math.hypot(a,c); if(d<chaseD){ chaseD=d; chase=b; chaseA=a; chaseC=c; } }
   }
 
@@ -1437,14 +1469,14 @@ function flockControl(st, dt){
     // so it can catch up. Left behind myself, with birds in sight ahead? speed up to close on them.
     let hole=0, waitC=1;
     if(P.cohesion>0){
-      const backs=[]; for(const b of birds){ if(b===st) continue; const a=rel(b)[0]; if(a<-0.3 && a>-150) backs.push(-a); }
+      const backs=[]; for(const b of birds){ if(b===st) continue; const a=rel(b)[0]; if(a<-0.3 && a>-P.chaseRange) backs.push(-a); }
       backs.sort((p,q)=>p-q);
       for(let i=1;i<backs.length;i++) hole=Math.max(hole, backs[i]-backs[i-1]);
       const big=Math.max(15, 3*P.followDist);                  // well past any normal gap between ranks
       waitC = clamp(1 - 0.006*P.cohesion*(hole - big), 0.85, 1);
     }
     aheadV = st.vPref*Math.min(wait, waitC); gap=0; desiredGap=0;
-    if(chase) aheadV = Math.max(aheadV, st.vPref*(1 + 0.12*P.cohesion*clamp((chaseD - 10)/30, 0, 1)));
+    if(chase) aheadV = Math.max(aheadV, st.vPref*(1 + P.chaseBoost*P.cohesion*clamp((chaseD - 10)/30, 0, 1)));
   } else {
     // boxed in, ease back a rank to get past a neighbour -- unless I've already picked an open spot off to
     // the side, in which case I head straight for it rather than dropping behind it
@@ -1738,6 +1770,7 @@ const SCHEMA=[
    {k:'clearView',label:'Keep a clear view',min:0,max:2,step:0.05,unit:'m/s',hint:'a bird with others ahead on BOTH sides drifts toward the open side and eases back. 0 = birds stay boxed in and the flock fills in as a diamond'},
    {k:'lineUp',label:'Same side as the bird ahead',min:0,max:0.6,step:0.05,unit:'m/s',hint:'if the bird ahead of me sits to the left of the bird it follows, I lean toward its left wingtip too (and likewise right) -- a tie-breaker worth this many m/s of upwash, so better air still wins. 0 = off'},
    {k:'lookAhead',label:'Look up the line',min:0,max:1,step:0.05,unit:'',hint:'how much a follower paces itself off the next one or two birds up its line (their speed, and whether it is the right number of gaps behind them) rather than only the bird it follows. 0 = only the bird directly ahead: in a long line every surge grows as it passes back, and the tail birds wear themselves out chasing it'},
+   {k:'reachCost',label:'Cost of overtaking to a spot',min:0,max:1,step:0.05,unit:'m/s',hint:'a spot I would have to fly ahead to reach costs this much upwash per 10 m of overtaking (clean air, extra speed), up to 10 m. 0 = distance hardly matters, so a late bird crosses to the far arm; ~0.2 = it takes the nearest arm end, and V\'s grow lopsided like real ones; 0.5+ = mostly echelons'},
    {k:'personalSpace',label:'Personal space',min:0,max:2.5,step:0.05,unit:'m',hint:'the clear air a bird keeps between itself and any other bird. A bird that sees it is about to cut across another gives way: the one behind holds back, slides off and steps up or down. 0 = only the old side-by-side overlap check'},
    {k:'cohesion',label:'Stay with the flock',min:0,max:1.5,step:0.05,unit:'',hint:'a bird with nobody close ahead that can still see birds further ahead speeds up and steers toward them; a bird leading with a big hole behind it eases off so the stragglers can catch up. 0 = a split flock stays split'},
    {k:'quirk',label:'Individual quirks',min:0,max:1.5,step:0.05,unit:'',hint:'how much birds differ in their choices: each has its own preferred spacing, how far out on the wingtip it sits, a favourite side and height, and it sometimes picks a slightly worse spot. 0 = identical birds and a mechanically perfect V'},
@@ -1905,7 +1938,7 @@ function buildPresetSection(host){
   const fl=document.createElement('label'); fl.className='ctl'; fl.style.margin='0';
   fl.innerHTML='<span style="color:var(--dim);font-size:11.5px">Starting arrangement</span>';
   const fsel=document.createElement('select');
-  fsel.innerHTML='<option value="cluster">Loose random cluster</option><option value="V">Symmetric V</option><option value="line">Single file</option>';
+  fsel.innerHTML='<option value="cluster">Loose random cluster</option><option value="V">Symmetric V</option><option value="line">Single file</option><option value="trickle">Join one at a time</option>';
   fsel.value=P.startFormation; fsel.onchange=()=>{ P.startFormation=fsel.value; resetState(); };
   fWrap.appendChild(fl); fWrap.appendChild(fsel); host.appendChild(fWrap);
 
@@ -2372,5 +2405,5 @@ window.__sim={P,
   get skimState(){return skimState;}, get flockBaseAlt(){return flockBaseAlt;},
   forceSkim(){ skimCountdown=0; },   // trigger a dip now (for testing)
   derived, integrate, stepFlock, stepBird, computeWakes, flockControl, upwashAt, WK,
-  resetState, resetFlock, computeForces, cam, buildBird};
+  resetState, resetFlock, seedRandom, computeForces, cam, buildBird};
 </script>

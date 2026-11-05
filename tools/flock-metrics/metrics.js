@@ -2,11 +2,13 @@
 // summarizes the structure that emerges: formation shape, who leads and how often that changes,
 // what leading vs drafting costs, and basic safety (altitude, spacing, straggling).
 //
-// opts: { secs, warm, P: {param overrides}, setup: "js run before reset", timeline: N }
+// opts: { secs, warm, seed, P: {param overrides}, setup: "js run before reset", timeline: N }
+// seed: a number makes the run repeatable (same seed, same page, same result); omit for fresh randomness.
 window.__run = function(opts){
   const S=__sim, P=S.P;
   Object.assign(P, JSON.parse(JSON.stringify(DEFAULTS)), opts.P||{});   // fresh defaults every run
   if(opts.setup) (new Function(opts.setup))();
+  if(S.seedRandom) S.seedRandom(opts.seed!=null ? opts.seed : null);
   if(opts.reset!==false) S.resetState();
   const dt=1/480, total=opts.secs||120, sampleEvery=0.5, warm=opts.warm||20;
   const n=S.birds.length;
@@ -16,7 +18,8 @@ window.__run = function(opts){
   const shape={line:0,V:0,echelon:0,filled:0,mixed:0}, rel={inline:0,stag:0}, relSk={inline:0,stag:0};
   const intPow=[0,0], edgePow=[0,0], inDy=[0,0]; let ends=0, branched=0; let interiorAcc=0;
   const balance={symmetric:0,lopsided:0,oneSided:0}, stringLen=[0,0,0,0,0,0]; let longestString=1, skimSamples=0, skimStr3=0, cruiseSamples=0, cruiseStr3=0;
-  let obsN=0, obsHit=0, minObs=1e9, splitN=0, fDy=[0,0];
+  let vArm=[0,0,0], sideSame=[0,0], lastSides=''; const ratios=[];
+  let mainAcc=0, obsN=0, obsHit=0, minObs=1e9, splitN=0, fDy=[0,0];
   const timeline=[]; let minTip=1e9, tipTouch=0, skimSteps=0, skimY=0, skimSpd=0, skimFlap=0, skimSpacing=[0,0];
   while(t<total){
     S.integrate(dt); t+=dt;
@@ -54,10 +57,16 @@ window.__run = function(opts){
       const P_=(aL&&aR)?intPow:edgePow; P_[0]+=S.birds[i].pS||0; P_[1]++; if(aL&&aR) nInt++;
     }
     if(close) closeCalls++;
+    // arm lengths in V-shaped samples: share of side birds on the longer arm (0.5 = even), long:short ratio
+    if(L>=1 && R>=1){ const mx=Math.max(L,R), mn=Math.min(L,R); vArm[0]+=mx/(L+R); vArm[1]++; ratios.push(mx/mn); }
+    // join order vs arm: does bird i sit on the same side of the front bird as bird i-1?
+    { const sd=C.map((c,i)=> i===f ? 0 : (c-C[f]<-0.7 ? -1 : c-C[f]>0.7 ? 1 : 0));
+      for(let i=2;i<n;i++) if(i!==f && i-1!==f && sd[i] && sd[i-1]){ sideSame[1]++; if(sd[i]===sd[i-1]) sideSame[0]++; }
+      lastSides=sd.map((v,i)=> i===f?'F':v<0?'L':v>0?'R':'|').join(''); }
     // obstacles (jetties, hills): body height above whatever is under it, where there is something
     if(typeof obstacleH==='function') for(const b of S.birds){ const h=obstacleH(b.pos.x,b.pos.z); if(h>0.01){ obsN++; const cl=b.pos.y-h; minObs=Math.min(minObs,cl); if(cl<0.5) obsHit++; } }
     // split: biggest along-gap between consecutive birds; height of each follower above the bird it follows
-    { const s=[...A].sort((p,q)=>p-q); let g=0; for(let i=1;i<n;i++) g=Math.max(g,s[i]-s[i-1]); if(g>3*P.followDist) splitN++;
+    { const s=[...A].sort((p,q)=>p-q); let g=0, run=1, big=1; for(let i=1;i<n;i++){ const d=s[i]-s[i-1]; g=Math.max(g,d); run = d>3*P.followDist ? 1 : run+1; big=Math.max(big,run); } if(g>3*P.followDist) splitN++; mainAcc+=big/n;
       for(const b of S.birds) if(b.target!=null){ fDy[0]+=b.pos.y-S.birds[b.target].pos.y; fDy[1]++; } }
     // follow graph: arm ends = birds nobody follows (clean V: 2, echelon: 1); branched = some bird other
     // than the front one has 2+ followers (a second line splitting off an arm)
@@ -100,6 +109,11 @@ window.__run = function(opts){
     powerSolo:avg(pr.solo), powerDraft:avg(pr.draft),
     powerByPhase:Object.fromEntries(Object.entries(pr).filter(([k])=>k.includes('_')).map(([k,v])=>[k,avg(v)])),
     skim: skimSteps? {minTip:+minTip.toFixed(2), tipTouchPct:+(100*tipTouch/(skimSteps*n)).toFixed(2), meanY:+(skimY/(skimSteps*n)).toFixed(2), meanSpeed:+(skimSpd/(skimSteps*n)).toFixed(1), flapPct:Math.round(100*skimFlap/(skimSteps*n))} : null,
+    armLongShare: vArm[1]? +(vArm[0]/vArm[1]).toFixed(2) : null,
+    armRatioMedian: ratios.length? +ratios.sort((p,q)=>p-q)[ratios.length>>1].toFixed(2) : null,
+    sameSideAsPrevPct: sideSame[1]? Math.round(100*sideSame[0]/sideSame[1]) : null,
+    finalSides: lastSides,
+    mainGroupPct:Math.round(100*mainAcc/Math.max(1,samples)),   // share of the birds in the biggest connected group
     splitPct:Math.round(100*splitN/Math.max(1,samples)), followDy:fDy[1]?+(fDy[0]/fDy[1]).toFixed(2):null,
     obstacle: obsN? {overPct:+(100*obsN/(samples*n)).toFixed(1), minClear:+minObs.toFixed(2), hitPct:+(100*obsHit/obsN).toFixed(1)} : null,
     minY:+minY.toFixed(2), minPair:+minPair.toFixed(2), closeCallPct:+(100*closeCalls/Math.max(1,samples)).toFixed(1), maxSpreadAlong:+maxSpread.toFixed(1), timeline};

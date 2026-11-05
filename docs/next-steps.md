@@ -12,6 +12,39 @@ Real pelicans at Chrissy Field fly three kinds of formation:
 
 In v18, at cruise height, the sim forms V's and echelons (a V with only one arm) but almost never single file. Why do real birds sometimes choose a line over a V?
 
+## Results so far (after v18, Nov 2026)
+
+New tools, all in `index.html` and the harness:
+
+- **Seeded runs.** `seedRandom(n)` swaps `Math.random` for a small PRNG. Specs take `"seed": n`, and the page takes `?seed=n`. The same seed gives an identical run, so A/B tests need far fewer repeats.
+- **"Join one at a time" start** (`startFormation:'trickle'`, `joinGap` 12 m). Birds start strung out behind each other and scattered sideways, so bird number is join order. Measure after a 180 s warm-up (`"warm":180`, 480 s runs).
+- **Cost of overtaking to a spot** (`reachCost`, a slider, default 0). A spot I'd have to fly ahead to reach costs `reachCost` m/s of upwash per 10 m, counting only the first 10 m (`reachCost()` near `flockControl`).
+- **Rejoin rule.** A bird with the flock ahead of it past a gap (more than 3 × `followDist`, within `wakeRange`) doesn't take spots behind itself. Without it, the cost made a trailing group's leader drop back behind its own followers every time it got close, and the flock stayed in 4–6 separate groups.
+- **Catch-up range and strength** are now parameters (`chaseRange` 150 m, `chaseBoost` 0.12). Raising them to 400 m and 0.3 didn't help, so they stay at the old values.
+- **New metrics:**
+  - `armLongShare`: share of side birds on the longer arm (0.5 is even; the photo's 13:5 is 0.72).
+  - `armRatioMedian`.
+  - `sameSideAsPrevPct`: how often bird i sits on the same side as bird i−1.
+  - `mainGroupPct`: share of birds in the biggest connected group.
+  - `finalSides`: the last sample's sides, per bird.
+
+Results: 20 birds, seeds 1–3, with the rejoin rule.
+
+| Spot cost | Long-arm share, cluster start | Long-arm share, join one at a time | Same side as previous joiner | Main group |
+|---|---|---|---|---|
+| 0 | 0.65 | 0.61 | 42–78% (chance) | 98–100% |
+| 0.15 | 0.72 | 0.72 | 40–77% | 94–99% |
+| 0.25 | 0.72 | 0.71 | 65–76% | 90–99% |
+| 0.5 | 0.84 (mostly echelons) | 0.86 (echelons 68–92%) | 91–99% | 86–96% |
+
+What this says:
+
+- **Join order alone doesn't make V's lopsided.** With no cost, birds joining one at a time end up as balanced as a random cluster.
+- **A cost of overtaking does make them lopsided,** and 0.15–0.25 matches the photo (0.72), from either start.
+- **Join order decides which arm a bird takes only when the cost is strong.** At 0.5, 91–99% of joiners take the side of the bird before them, against about 75% by chance at that arm share.
+- **The cost isn't the default.** The v18 suite at 0.2 (seed 1) splits the flock 21–49% of the time, against about 1–5% in v18. V's at default fall to 33%, and the closest pair dips to 0.18 m. Birds hang back rather than pay to close up.
+- **Next fix:** make closing a gap *within* the flock free, so a hole costs nothing to fill, while still charging for overtaking past birds to a far arm.
+
 ## Hypothesis 1: arrival order sets the shape of the V
 
 This came from Will. A bird that catches up at the **front** finds the lead's left wingtip already taken by #2. It takes the right wingtip, which starts the second arm. A bird that catches up from **behind** slots in at the end of the nearest line, on the same side as #2, #3, #4 and so on. A gap that opens in the middle of a line gets filled by a bird just behind it.
@@ -56,11 +89,11 @@ Updrafts are probably not the answer. v18 makes the wake rise with steady lift, 
 
 ## Experiments to try next
 
-1. **A cost for reaching a spot** (tests hypothesis 1). Replace the flat distance penalty in spot scoring with the effort of getting there.
+1. **A cost for reaching a spot** (tests hypothesis 1). *Done, see Results above; still to do: charge only for overtaking past other birds, not for closing a gap.* Replace the flat distance penalty in spot scoring with the effort of getting there.
    - Distance *ahead* that I must gain costs extra speed in clean air while overtaking.
    - Sideways distance costs less.
    - Expected result: birds arriving from behind take the nearest arm end, and arms grow from their tails.
-2. **Birds that join one at a time** (tests hypothesis 1). Add a `startFormation` option in `resetFlock` (`index.html`, next to the `'V'` and `'line'` cases around line 729): birds launch from behind in sequence, a few seconds apart, and catch up.
+2. **Birds that join one at a time** (tests hypothesis 1). *Done, see Results above.* Add a `startFormation` option in `resetFlock` (`index.html`, next to the `'V'` and `'line'` cases around line 729): birds launch from behind in sequence, a few seconds apart, and catch up.
    - New metric for `tools/flock-metrics/metrics.js`: arm length ratio (long/short). The existing `armBalance` only gives symmetric, lopsided or one-sided.
    - Compare against the random-cluster start; the prediction is that sequential joining makes V's more lopsided.
    - Bonus: correlate each bird's join order with which arm it ends up on.
@@ -76,7 +109,8 @@ Updrafts are probably not the answer. v18 makes the wake rise with steady lift, 
 - **Closest approaches:** the closest pair still dips to about 0.5 m in some gusty and low-skim runs, and close calls (under 1.2 m) happen 1–3% of the time.
 - **Strong onshore wind:** at 5 m/s onshore the flock is pushed over the beach most of the time. Birds stay clear of the ground, but the leader can't hold the coast.
 - **Low-skim strings** remain weaker than in v16.
-- **Noise:** results vary a lot from run to run (`Math.random`, no seed). Compare variants with three or more runs each. A seeded RNG would make A/B runs much cheaper.
+- **Noise:** fixed with seeds, but results still vary a lot *between* seeds; V share swings 24–99% at the same setting. Use three or more seeds per variant.
+- **Docker memory:** other projects' containers can take most of Docker's RAM; one was using 9.9 of 19.6 GB. Four headless Chromes at once then crash with "Target crashed". Run specs one after another, a few per container.
 
 ## How to run things
 
