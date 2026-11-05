@@ -50,7 +50,7 @@ So the goal here is to build the flock up from honest single-bird physics:
 
 | Path | What |
 |---|---|
-| `index.html` | The current version of the lab (v20; the version shows next to the title in the lab's panel), which is where iteration happens |
+| `index.html` | The current version of the lab (v21; the version shows next to the title in the lab's panel), which is where iteration happens |
 | `versions/` | Every earlier build, kept for reference (see below) |
 | `docs/conversation-notes.md` | Notes from the design conversation that produced v1 through v12 |
 | `docs/next-steps.md` | Where the investigation stands (V vs single file) and the experiments to try next |
@@ -70,7 +70,8 @@ There are two naming series, in chronological order:
 - `bird-sim-v17` (Nov 2026): rule 2 now chooses a *spot* (an open wingtip spot or the spot straight behind a bird) by the air expected there, instead of following the nearest bird ahead. Arms stay closer to one bird wide, and an eighth rule, *same side*, breaks ties.
 - `bird-sim-v18` (Nov 2026): followers pace off the next birds up their line, not just the one ahead (*look up the line*). Birds keep personal space and give way when about to cut across each other. Split-off birds work to rejoin the flock. Birds avoid the jetties and hills. Wakes rise in steady updrafts. Each bird has its own quirks.
 - `bird-sim-v19` (Nov 2026): seeded runs for repeatable experiments, a *Join one at a time* start, a *Cost of overtaking to a spot* slider (off by default), and a rejoin rule so a group that has fallen behind merges back into the flock. Wind vectors are off by default.
-- `bird-sim-v20` (Nov 2026): the overtaking cost now counts only birds passed on the way to a spot, so closing a gap is free and the flock stays together at any setting. This is the same as the current `index.html`.
+- `bird-sim-v20` (Nov 2026): the overtaking cost now counts only birds passed on the way to a spot, so closing a gap is free and the flock stays together at any setting.
+- `bird-sim-v21` (Nov 2026): *Finger of God* mode. Tick it and click near the flock to drop a sudden air pocket on it (a downdraft spreading outward), which knocks the birds nearby off course and startles them for up to a second. Up to 5 in a quick burst, then it recharges after 8 s without clicks. *Disturbance strength* and *size* sliders. This is the same as the current `index.html`.
 
 ## How the formation emerges (v13–v18)
 

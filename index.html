@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v20</title>
+<title>Bird Flight Lab v21</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -89,7 +89,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v20</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v21</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -209,6 +209,12 @@ const P = {
   headwind:1.5, crosswind:-0.5, updraft:0, turbulence:1.0,
   // viz: wind vector field
   vWind:0,
+  fingerOfGod:0,               // click near the flock to drop a sudden air pocket on it (see disturb())
+  fogStrength:10,              // m/s: peak downdraft at the pocket's centre (outflow about as strong at its rim)
+  fogRadius:6,                 // m: size of the pocket
+  fogDuration:1.2,             // s: how long it lasts
+  fogBurst:5,                  // disturbances in a burst before it has to recharge
+  fogCooldown:8,               // s of sim time with no clicks before the burst is fully recharged
   // shoreline & surface skimming (ground-effect hydroplaning led by the lead bird)
   skimEnable:1, skimAlt:2.0, tipClear:0.2, skimPeriod:30, skimDuration:8,
   // launch
@@ -718,7 +724,7 @@ function gauss(){ return Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math
 function resetFlock(){
   recomputeDerived();
   for(const st of birds) disposeMesh(st.mesh);
-  birds=[]; order=[]; lastFront=-1; windT=0;
+  birds=[]; order=[]; lastFront=-1; windT=0; pockets=[]; fogCharges=P.fogBurst; fogLastT=-1e9;
   const n=Math.max(1, Math.round(P.nBirds));
   const iv=P.individuality||0;
   for(let i=0;i<n;i++){
@@ -781,7 +787,46 @@ function windAt(pos){
     // vertical gusts can't pass through the water: they fade out over the last metre or two
     w.x += s*gx; w.y += s*0.8*gy*(1 - Math.exp(-Math.max(pos.y,0)/1.5)); w.z += s*gz;
   }
+  if(pockets.length) addPockets(w, pos);
   return w;
+}
+
+// ---- "Finger of God": sudden air pockets dropped on the flock. Each is a short microburst: a downdraft
+// at the centre spreading outward (strongest outflow around 0.7 of the radius), fading smoothly with
+// distance. It snaps on in about 0.15 s and dies away over its duration. It goes into windAt, so it acts
+// on the birds through their aerodynamics (and their wingtip "feel"), and their own controllers recover.
+// It drifts along with the flock (its mean velocity when it struck), so the birds it catches stay in it.
+let pockets=[];               // {x,y,z, vx,vz (drift), t0 (windT), str, R, dur}
+let fogCharges=null, fogLastT=-1e9;
+function addPockets(w, pos){
+  for(const k of pockets){
+    const age=windT-k.t0; if(age<0 || age>k.dur) continue;
+    const env = age<0.15 ? age/0.15 : 1 - (age-0.15)/(k.dur-0.15);
+    const dx=pos.x-(k.x+k.vx*age), dy=pos.y-k.y, dz=pos.z-(k.z+k.vz*age), r=Math.hypot(dx,dy,dz);
+    const q=r/k.R; if(q>2.5) continue;
+    const f=k.str*env*Math.exp(-q*q);
+    const out=1.7*f*q, rh=Math.hypot(dx,dz)||1;            // outward, in the horizontal
+    w.x += out*dx/rh; w.z += out*dz/rh;
+    w.y -= f*(1 - Math.exp(-Math.max(pos.y,0)/1.5));      // down -- but it can't blow through the water
+  }
+}
+// drop a pocket centred at (x,y,z). force=true bypasses the burst limit (scripted tests).
+function disturb(x, y, z, opts={}){
+  if(fogCharges==null) fogCharges=P.fogBurst;
+  if(windT - fogLastT > P.fogCooldown) fogCharges=P.fogBurst;   // rested long enough: fully recharged
+  if(!opts.force){ if(fogCharges<=0) return false; fogCharges--; }
+  fogLastT=windT;
+  let vx=0, vz=0; for(const b of birds){ vx+=b.vel.x; vz+=b.vel.z; } if(birds.length){ vx/=birds.length; vz/=birds.length; }
+  const k={x, y, z, vx, vz, t0:windT, str:opts.strength!=null?opts.strength:P.fogStrength, R:opts.radius||P.fogRadius, dur:P.fogDuration};
+  pockets.push(k); pockets=pockets.filter(p=>windT-p.t0 <= p.dur);
+  if(typeof showPocket==='function') showPocket(k);
+  return true;
+}
+function fogStatus(){
+  if(fogCharges==null) fogCharges=P.fogBurst;
+  const idle=windT-fogLastT;
+  if(idle > P.fogCooldown) return {charges:P.fogBurst, wait:0};
+  return {charges:fogCharges, wait: fogCharges>0 ? 0 : P.fogCooldown-idle};
 }
 
 // full-range lift/drag coefficients (blend linear -> flat plate past stall)
@@ -1376,6 +1421,18 @@ function flockControl(st, dt){
   // ---- heading: a bird with nobody ahead follows the coast; a follower lines up with the bird it
   // follows (blended with the coast it can also see). Banked, coordinated turns.
   const psiTan = Math.atan(coastFollowSlope(st.pos.x));
+  // STARTLE (Finger of God): a bird that feels an air pocket hard breaks formation for up to ~1 s and
+  // veers away from its centre (sideways and in heading), then the usual rules bring it back.
+  if(pockets.length){
+    for(const k of pockets){ const age=windT-k.t0; if(age<0 || age>k.dur) continue;
+      const ex=st.pos.x-(k.x+k.vx*age), ey=st.pos.y-k.y, ez=st.pos.z-(k.z+k.vz*age), q=Math.hypot(ex,ey,ez)/k.R;
+      const felt=k.str*Math.exp(-q*q);
+      if(felt>2){ const T0=clamp(felt/10, 0.3, 1.2);
+        if(!(st.startleT>0) || T0>st.startleT){ st.startleT=T0; st.startleT0=T0;
+          const lat=-ex*st._hz+ez*st._hx; st.startleSide = Math.sign(lat) || (Math.random()<0.5?-1:1); st.startleK=clamp(felt/8, 0.3, 1.5); } } }
+  }
+  const startle = st.startleT>0 ? st.startleK*st.startleT/st.startleT0 : 0;
+  if(st.startleT>0) st.startleT -= dt;
   if(lead){
     const crossTrack = coastFollow(st.pos.x) - st.pos.z;      // >0 = need +z
     // crab into a crosswind as much as it takes (up to ~23 deg) to hold the line along the shore
@@ -1386,6 +1443,7 @@ function flockControl(st, dt){
     st.hdgCmd = psiTan + 0.5*wrapPi(Math.atan2(tgt.vel.z, tgt.vel.x) - psiTan);
   }
   if(obsLat) st.hdgCmd += clamp(0.12*obsLat, -0.5, 0.5);
+  if(startle) st.hdgCmd += clamp(0.4*startle, 0, 0.6)*st.startleSide;      // +side = toward my lateral axis n
   st.bankCmd = clamp(1.3*wrapPi(st.hdgCmd - heading), -0.5, 0.5);
 
   // ---- 3 & 4. LATERAL: seek better air, keep spacing
@@ -1465,6 +1523,7 @@ function flockControl(st, dt){
     sepUp -= (Math.sign(py || dy) || (st.id<b.id ? 1 : -1))*k;
   }
   vlat = clamp(vlat, -2.5, 2.5) + clamp(sepLat, -2, 2) + clamp(obsLat, -3, 3);
+  if(startle) vlat = (1-Math.min(1,startle))*vlat + 3*startle*st.startleSide;
   st.vzCmd = tgt ? tgt.vel.z + vlat*nz : (Math.abs(vlat)>0.05 ? st.vel.z + vlat*nz : null);
 
   // ---- fore/aft: hold my follow distance behind the bird I chose, or (leading) fly my own pace
@@ -1954,15 +2013,20 @@ function buildPresetSection(host){
   const toggles=[['vForces','Force vectors'],['vFlow','Airflow'],['vTrail','Wingtip wakes'],
                  ['vWind','Wind vectors (green=up, red=down)'],['draft','Drafting upwash'],['leadRotate','Fatigue-driven passing (emergent lead changes)'],
                  ['wakeSink','Wakes sink behind each bird'],['skimEnable','Surface skims (ground-effect fishing)'],
-                 ['avoidObstacles','Avoid the jetties and hills']];
+                 ['avoidObstacles','Avoid the jetties and hills'],
+                 ['fingerOfGod','Finger of God (click near the flock to disturb it)']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!P[k];
     cb.onchange=()=>{P[k]=cb.checked?1:0; if(k==='vFlow'&&flow) flow.visible=cb.checked;
+      if(k==='fingerOfGod') renderer.domElement.style.cursor = cb.checked ? 'crosshair' : '';
       if(k==='vTrail'){ for(const st of birds){ if(st.mesh){ st.mesh.trailR.visible=cb.checked; st.mesh.trailL.visible=cb.checked; } } }};
     t.appendChild(cb); t.appendChild(document.createTextNode(lb)); tg.appendChild(t);
+    if(k==='fingerOfGod'){ const sp=document.createElement('span'); sp.id='fogCharge'; sp.style.cssText='margin-left:auto;font-variant-numeric:tabular-nums;color:#7fe3d0'; t.appendChild(sp); }
   }
   host.appendChild(tg);
+  host.appendChild(mkCtl({k:'fogStrength',label:'Disturbance strength',min:1,max:20,step:0.5,unit:'m/s',hint:'peak downdraft at the centre of the air pocket a click drops on the flock (Finger of God); it also blows outward about as hard near its rim. Up to '+P.fogBurst+' in a quick burst, then it recharges after '+P.fogCooldown+' s without clicks'}));
+  host.appendChild(mkCtl({k:'fogRadius',label:'Disturbance size',min:2,max:20,step:0.5,unit:'m',hint:'radius of the air pocket'}));
 }
 function markPresetCustom(){
   currentPreset='Custom';
@@ -2052,8 +2116,28 @@ const povTagEl=document.getElementById('povTag'), leadTintEl=document.getElement
 const _pF=V3(), _pU=V3(), _pE=V3(), _wUp=V3(0,1,0), _pR=V3(), _pDir=V3();
 const _qy=new THREE.Quaternion(), _qp=new THREE.Quaternion();
 let dragging=false, px=0, py=0;
-renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;px=e.clientX;py=e.clientY;});
-addEventListener('pointerup',()=>dragging=false);
+let downX=0, downY=0;
+renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;px=e.clientX;py=e.clientY;downX=e.clientX;downY=e.clientY;});
+addEventListener('pointerup',e=>{ dragging=false;
+  if(P.fingerOfGod && e.target===renderer.domElement && Math.hypot(e.clientX-downX, e.clientY-downY) < 5) fingerAt(e.clientX, e.clientY); });
+// cast a ray from the eye through the click; the pocket goes at the point on that ray closest to the
+// bird nearest the click on screen (so a click near the flock lands among the birds). Clicks more than
+// 60 px from every bird miss.
+const _ray=new THREE.Raycaster(), _ndc=new THREE.Vector2();
+function fingerAt(cx, cy){
+  const r=renderer.domElement.getBoundingClientRect(); camera.updateMatrixWorld();
+  _ndc.set((cx-r.left)/r.width*2-1, -((cy-r.top)/r.height*2-1));
+  _ray.setFromCamera(_ndc, camera);
+  const o=_ray.ray.origin, d=_ray.ray.direction;
+  // nearest bird ON SCREEN (what you see is what you hit); a click more than 60 px from every bird misses
+  let best=null, bpx=Infinity; const _v=V3();
+  for(const b of birds){ _v.copy(b.pos).project(camera); if(_v.z>=1 || _v.z<=-1) continue;
+    const sx=r.left+(_v.x+1)/2*r.width, sy=r.top+(1-_v.y)/2*r.height, dp=Math.hypot(sx-cx, sy-cy);
+    if(dp<bpx){ bpx=dp; best=b; } }
+  if(!best || bpx>60) return false;
+  const bt=Math.max(0, (best.pos.x-o.x)*d.x+(best.pos.y-o.y)*d.y+(best.pos.z-o.z)*d.z);   // closest point on the ray to it
+  return disturb(o.x+d.x*bt, Math.max(0.5, o.y+d.y*bt), o.z+d.z*bt);
+}
 addEventListener('pointermove',e=>{ if(!dragging)return; const dxp=e.clientX-px, dyp=e.clientY-py; px=e.clientX;py=e.clientY;
   if(cam.pov>=0){ // riding a bird: drag looks AROUND (yaw/pitch off the bird's heading)
     cam.povYaw   = clamp(cam.povYaw   - dxp*0.006, -2.7, 2.7);   // up to ~155deg each way -> see the whole flock
@@ -2350,6 +2434,28 @@ function updateHUD(){
   hint.innerHTML=msg;
 }
 
+// pocket visuals: a ring spreading on the water under it and a fading shell where it struck
+const pocketFx=[];
+function showPocket(k){
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.85,1,48), new THREE.MeshBasicMaterial({color:0xffe9a8, transparent:true, opacity:0.8, side:THREE.DoubleSide, depthWrite:false}));
+  ring.rotation.x=-Math.PI/2; ring.position.set(k.x,0.06,k.z); scene.add(ring);
+  const shell=new THREE.Mesh(new THREE.SphereGeometry(1,20,14), new THREE.MeshBasicMaterial({color:0xffe9a8, transparent:true, opacity:0.25, wireframe:true, depthWrite:false}));
+  shell.position.set(k.x,k.y,k.z); scene.add(shell);
+  pocketFx.push({k, ring, shell});
+}
+function updatePocketFx(){
+  for(let i=pocketFx.length-1;i>=0;i--){
+    const f=pocketFx[i], age=windT-f.k.t0, u=age/(f.k.dur+0.8);
+    if(u>=1 || age<0){ for(const m of [f.ring,f.shell]){ scene.remove(m); m.geometry.dispose(); m.material.dispose(); } pocketFx.splice(i,1); continue; }
+    const ox=f.k.vx*Math.max(0,age), oz=f.k.vz*Math.max(0,age);
+    f.ring.position.set(f.k.x+ox, 0.06, f.k.z+oz); f.shell.position.set(f.k.x+ox, f.k.y, f.k.z+oz);
+    f.ring.scale.setScalar(f.k.R*(0.4+1.6*u)); f.ring.material.opacity=0.8*(1-u);
+    f.shell.scale.setScalar(f.k.R*(0.5+0.7*u)); f.shell.material.opacity=0.25*(1-u);
+  }
+  const el=document.getElementById('fogCharge');
+  if(el){ if(!P.fingerOfGod) el.textContent=''; else { const s=fogStatus();
+    el.textContent = s.wait>0 ? 'recharging '+s.wait.toFixed(1)+' s' : '●'.repeat(s.charges)+'○'.repeat(Math.max(0,P.fogBurst-s.charges)); } }
+}
 function frame(now){
   requestAnimationFrame(frame);
   let dt=(now-lastT)/1000; lastT=now; dt=clamp(dt,0,0.05)*P.timeScale;
@@ -2358,7 +2464,7 @@ function frame(now){
     const sub=1/480; let acc=dt;
     let guard=0;
     while(acc>1e-6 && guard++<80){ const h=Math.min(sub,acc); integrate(h); acc-=h; }
-    updateBirdMesh(dt); updateFlow(dt); updateArrows(); updateWindField();
+    updateBirdMesh(dt); updateFlow(dt); updateArrows(); updateWindField(); updatePocketFx();
     // strips visualization opacity
     // charts
     chartData.push({lift:telemetry.lift||0, thrust:telemetry.thrust||0, alt:state.pos.y});
@@ -2413,5 +2519,5 @@ window.__sim={P,
   get skimState(){return skimState;}, get flockBaseAlt(){return flockBaseAlt;},
   forceSkim(){ skimCountdown=0; },   // trigger a dip now (for testing)
   derived, integrate, stepFlock, stepBird, computeWakes, flockControl, upwashAt, WK,
-  resetState, resetFlock, seedRandom, computeForces, cam, buildBird};
+  resetState, resetFlock, seedRandom, disturb, fingerAt, fogStatus, camera, get pockets(){return pockets;}, computeForces, cam, buildBird};
 </script>

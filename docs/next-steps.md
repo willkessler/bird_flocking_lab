@@ -126,15 +126,32 @@ Updrafts are probably not the answer. v18 makes the wake rise with steady lift, 
    - Report drafting power against leading power, to see what lines cost.
 4. **Wide spacing at cruise.** Raise `followDist` to 5–8 m with `skimEnable` set to 0, and see whether lines replace V's once the wake fades. Partly tried in v16: at cruise, follow strength 0.3 broke up V's, and 8 m drafting cost more than leading.
 
-## Next feature: "finger of God" mode (requested Nov 2026)
+## "Finger of God" mode (v21)
 
-A tool for messing with the flock, to test how it reforms.
+Built as planned, with two changes found in testing:
 
-- **Controls:** a toggle, "Finger of God (click to disturb the flock)", and a *Disturbance strength* slider.
-- **Aiming:** a click casts a ray from the camera through the mouse position. The disturbance is centred on the point on that ray closest to the nearest bird. Clicks far from any bird do nothing. Dragging still orbits the camera.
-- **The disturbance:** a sudden pocket of air, about 1–1.5 s long and a few wingspans across, that blows outward and down from its centre. It fades with distance and time, so birds near the centre are hit hard and those at the edge barely notice. It's added to `windAt`, so it acts through the aerodynamics and the birds' own controllers have to recover. Rings on the water show where it hit.
-- **Rate limit:** a burst of up to 5 disturbances, then a cool-down of about 8 s before all 5 come back. A small charge indicator shows what's left. Burst size and cool-down are settings.
-- **Harness hook:** script the same disturbance with a fixed seed, then measure recovery time and the shape the flock reforms into.
+- **The pocket drifts with the flock.** A pocket fixed in the air did almost nothing: birds at 11 m/s cross it in under a second, and a bird hit dead-centre dropped only 0.3 m. So it now moves at the flock's mean velocity from when it struck.
+- **Startle.** Even drifting, the air alone only nudged the formation; the birds' controllers absorb it. So a bird that feels more than 2 m/s of the pocket breaks formation for 0.3–1.2 s, veering sideways and turning away from the centre. Then the usual rules bring it back.
+
+Details:
+
+- **Aiming:** a click picks the bird nearest the cursor on screen. A click more than 60 px from every bird misses. The pocket goes at the point on the click ray closest to that bird.
+- **Controls:** *Disturbance strength* (default 10 m/s peak downdraft) and *Disturbance size* (6 m radius) sliders. `fogDuration` (1.2 s), `fogBurst` (5) and `fogCooldown` (8 s of sim time with no clicks) are parameters.
+- **Visuals:** a ring spreads on the water under the pocket, a fading shell shows where it struck, and an indicator shows the charges left (or "recharging").
+- **Harness:** specs take `"events":[{"t":80,"strength":20,"dx":4}]`, centred on the bird nearest the flock's centroid plus the offset. `recovery[]` reports how far birds stray from their layout at the strike (`layoutDev` at +1…30 s), the biggest drop, whether the flock split, and when it regrouped.
+
+Seed 1, 20 birds, no skims (layout disturbed at +1 / +5 / +10 s):
+
+| Run | Layout disturbed | Split? | Regrouped after |
+|---|---|---|---|
+| Control, no pocket | 0.5 / 1.7 / 2.5 m | no | — |
+| Single hit, strength 10 | 1.9 / 4.3 / 6.1 m | no | — |
+| Burst of 5, strength 10 | 2.0 / 8.2 / 4.1 m | yes | ~10 s |
+| Burst of 5, strength 20 | 3.1 / 8.2 / 10.6 m | yes (17 m gap) | ~19 s |
+
+With skims on and a strength-20 burst every 20 s for 5 minutes, no bird touched the water (lowest wingtip 0.02 m above it). The closest pair came within 0.16 m once, and the flock split 37% of the time.
+
+Next with this tool: measure *what shape* the flock reforms into after a big burst. Does a scattered flock rebuild a lopsided V, an echelon, or a balanced V, and does it depend on which birds were scattered?
 
 ## Open issues carried over from v18
 
