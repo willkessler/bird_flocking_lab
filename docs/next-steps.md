@@ -249,6 +249,22 @@ Against the video (40 mph from about 40 ft): our entry is about 8% slower. The r
   - A quorum rule for when the flock leaves.
   - What shape it re-forms into. Full birds rejoin one at a time, which is exactly the v19–v22 join-one-at-a-time question.
 
+## Fishing (v24): pods, scouting, leaving when full
+
+What changed, and why:
+- **Dives were synchronised.** Every bird finished its laps at about the same time and dived at the school's centre. Now a school is 5–8 pods that surface and sink. A bird dives only on a pod that is up, ahead of it and inside its left-hand turn, and it claims the pod for about 2.5 s. A strike scares the pod down.
+- **Birds dived the moment they arrived.** They now scout a new school for 1.5–2.5 laps first.
+- **Nobody stopped until the fish were gone.** Full is now hunger < 0.25, with starting hunger spread ±30% between birds, and schools have 50 fish. Birds leave one by one.
+- **Pod motion and misses:** strikes used to spin every pod three times faster (school scatter), which moved targets metres during an approach. Scatter is now visual only, and approach and dive steering lead the pod by the fall time.
+
+Results (tools/flock-metrics/specs/fishing.json, flock of 20, seed 1):
+- 61 dives, 47 caught (77%).
+- First dives from 46 s, then spread out, mostly one at a time.
+- Birds left the school between 86 s and 260 s.
+- One pelican: 2 dives, 2 caught, full at 77 s.
+
+With fishing off, seeded runs are bit-identical to v23 (the new scenery draws its placement from a fixed hash, not the sim's RNG).
+
 ## Open issues carried over from v18
 
 - **Branching:** with quirks, a second line branches off an arm more often: 50–74% of the time at 12 birds, against 34–46% in v17. Try a lower default `quirk`, or make the spot-score noise smaller than the side preference.
