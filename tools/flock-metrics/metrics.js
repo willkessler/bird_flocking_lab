@@ -5,6 +5,9 @@
 // opts: { secs, warm, seed, P: {param overrides}, setup: "js run before reset", timeline: N }
 // events: [{t, strength, radius, dx, dy, dz}] drop a Finger-of-God air pocket at time t, centred on the
 //   bird nearest the flock's centroid plus (dx,dy,dz) m; reported as recovery[] (time to regroup and to re-form its shape).
+// fish: {dx, dz|z, at, opts} put a fish school dx m ahead of bird 0 at time at (fishing runs; see fishRun).
+//   Returns every dive (height, entry speed and angle, miss, catch, depth, time under, takeoff run), the
+//   mode changes, and with trace:true a 0.1 s trace of each bird while it's diving / in the water / taking off.
 // seed: a number makes the run repeatable (same seed, same page, same result); omit for fresh randomness.
 window.__run = function(opts){
   const S=__sim, P=S.P;
@@ -12,6 +15,7 @@ window.__run = function(opts){
   if(opts.setup) (new Function(opts.setup))();
   if(S.seedRandom) S.seedRandom(opts.seed!=null ? opts.seed : null);
   if(opts.reset!==false) S.resetState();
+  if(opts.fish) return fishRun(opts, S);
   const dt=1/480, total=opts.secs||120, sampleEvery=0.5, warm=opts.warm||20;
   const n=S.birds.length;
   const frontT=new Array(n).fill(0), pr={solo:[0,0],draft:[0,0]};
@@ -145,3 +149,34 @@ window.__run = function(opts){
     obstacle: obsN? {overPct:+(100*obsN/(samples*n)).toFixed(1), minClear:+minObs.toFixed(2), hitPct:+(100*obsHit/obsN).toFixed(1)} : null,
     minY:+minY.toFixed(2), minPair:+minPair.toFixed(2), closeCallPct:+(100*closeCalls/Math.max(1,samples)).toFixed(1), maxSpreadAlong:+maxSpread.toFixed(1), timeline};
 };
+
+// FISHING (v23): one school, then watch what the birds do with it
+function fishRun(opts, S){
+  const dt=1/480, total=opts.secs||120, fo=opts.fish, ev=[], trace=[];
+  let t=0, nextS=0, placed=false; const last={};
+  while(t<total){
+    if(!placed && t>=(fo.at||0)){ placed=true; const b=S.birds[0];
+      const x=b.pos.x+(fo.dx==null?90:fo.dx), z=fo.z!=null ? fo.z : b.pos.z+(fo.dz||0);
+      if(!S.addSchool(x, z, fo.opts||{})) return {err:'school on land at '+x.toFixed(0)+','+z.toFixed(0)}; }
+    S.integrate(dt); t+=dt;
+    if(t>=nextS){ nextS+=opts.traceEvery||0.1;
+      for(const b of S.birds){
+        if(!isFinite(b.pos.y)) return {err:'NaN at t='+t.toFixed(2), ev};
+        const m=b.mode+(b.phase2?':'+b.phase2:'')+(b.mode==='swim'?':'+b.swimPhase:'');
+        if(last[b.id]!==m){ last[b.id]=m; ev.push(t.toFixed(1)+' #'+b.id+' '+m+' y='+b.pos.y.toFixed(1)+' h='+b.hunger.toFixed(2)); }
+        if(opts.trace && (opts.trace==='all' || !(b.mode==='fly' || (b.mode==='circle' && b.phase2!=='approach')))){
+          const v=b.vel, vh=Math.hypot(v.x,v.z);
+          trace.push([t.toFixed(2), '#'+b.id, m, 'y='+b.pos.y.toFixed(2), 'v='+v.length().toFixed(1), 'vh='+vh.toFixed(1),
+            'gam='+(Math.atan2(v.y,vh)*57.3).toFixed(0), 'tuck='+(b.tuck||0).toFixed(2), 'flap='+(b.flapping?1:0),
+            'c='+(b.waterContact==null?'-':b.waterContact.toFixed(2)), 'push='+((b.tel.footPush||0).toFixed(1)), 'd='+(b.school?Math.hypot(b.pos.x-b.school.x,b.pos.z-b.school.z).toFixed(1):'-'),
+            'bank='+((b.bankCmd||0)*57.3).toFixed(0), 'asp='+(b.aspS||0).toFixed(1), 'tA='+(b.targetAlt||0).toFixed(1), 'lat='+(b.latAcc||0).toFixed(1),
+            'slip='+(()=>{ const f=new b.pos.constructor(1,0,0).applyQuaternion(b.quat); return (Math.atan2(Math.sin(Math.atan2(f.z,f.x)-Math.atan2(v.z,v.x)),Math.cos(Math.atan2(f.z,f.x)-Math.atan2(v.z,v.x)))*57.3).toFixed(0); })(),
+            'pitch='+(()=>{ const f=new b.pos.constructor(1,0,0).applyQuaternion(b.quat); return (Math.asin(Math.max(-1,Math.min(1,f.y)))*57.3).toFixed(0); })()].join(' '));
+        }
+      }
+    }
+  }
+  const dives=S.fishLog.map(d=>{ const {x0,z0,hdg0,vh0,...r}=d; r.vh0=+vh0.toFixed(1); return r; });
+  return {dives, ev, timeline:trace,
+    final:S.birds.map(b=>({id:b.id, mode:b.mode, hunger:+b.hunger.toFixed(2), caught:b.caught, y:+b.pos.y.toFixed(1), aimA:+b.aimA.toFixed(2), aimL:+b.aimL.toFixed(2)}))};
+}

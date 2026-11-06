@@ -44,13 +44,21 @@ So the goal here is to build the flock up from honest single-bird physics:
 - **Fatigue:** flapping harder than a bird's sustainable power builds fatigue, which weakens its flight muscles and lowers the pace it wants to fly. Birds differ in fitness and preferred pace.
 - Coastline following, gusty turbulent wind, and headwind and crosswind.
 
+**Fishing (v23)**
+- **Fish schools** show up on the water: a dark patch over a bait ball, silver fish milling and jumping, small boils at the surface, a ring, and a label with how many fish are left and how many pelicans are working it. They turn up ahead of the flock on their own, or you can click the water to drop one.
+- **Going fishing:** a bird hungrier than 40% that sees a school within 150 m, or sees another bird fishing one, leaves the flock. A yellow line shows what it spotted. It circles about 13 m up in a left-hand orbit, then turns in and lines up a dive, aiming off to one side because its roll-in carries it left. Each bird learns where its own dives land.
+- **The plunge dive:** it rolls left past vertical and pulls its nose down, sweeps its wings back and lifts them into a V over its back, then folds them flat in the last couple of metres and hits the water as an arrow. The tuck changes the real wing geometry in the aero model, so the lift genuinely goes away and the fall is ballistic. Dives from about 13 m hit the water at about 16.5 m/s (37 mph), 60–80° steep, close to the PBS footage (40 mph from about 40 ft).
+- **In the water:** the impact makes it gulp air into its air sacs, so it pops back up within about a second from about 1 m down. Then it drains its pouch (bill down), swallows (head back), and bobs facing into the wind.
+- **Takeoff from the water:** it flaps hard with the beat raised and runs on the surface with its feet, until its wings carry enough to break the water's grip. That takes about 3 s (2–4 s) and 11–30 m, lifting off at about 9–12 m/s.
+- **Full** (about 3 fish), it climbs back up to the flock. Hunger slowly comes back.
+
 **Viewing:** orbit camera, `1`–`9` to ride a bird's-eye view, `Shift`+`1`–`9` for an over-the-shoulder chase cam (drag to look around), and live telemetry and force charts for the focused bird.
 
 ## Repository layout
 
 | Path | What |
 |---|---|
-| `index.html` | The current version of the lab (v22; the version shows next to the title in the lab's panel), which is where iteration happens |
+| `index.html` | The current version of the lab (v23; the version shows next to the title in the lab's panel), which is where iteration happens |
 | `versions/` | Every earlier build, kept for reference (see below) |
 | `docs/conversation-notes.md` | Notes from the design conversation that produced v1 through v12 |
 | `docs/next-steps.md` | Where the investigation stands (V vs single file) and the experiments to try next |
@@ -72,7 +80,8 @@ There are two naming series, in chronological order:
 - `bird-sim-v19` (Nov 2026): seeded runs for repeatable experiments, a *Join one at a time* start, a *Cost of overtaking to a spot* slider (off by default), and a rejoin rule so a group that has fallen behind merges back into the flock. Wind vectors are off by default.
 - `bird-sim-v20` (Nov 2026): the overtaking cost now counts only birds passed on the way to a spot, so closing a gap is free and the flock stays together at any setting.
 - `bird-sim-v21` (Nov 2026): *Finger of God* mode. Tick it and click near the flock to drop a sudden air pocket on it (a downdraft spreading outward), which knocks the birds nearby off course and startles them for up to a second. Up to 5 in a quick burst, then it recharges after 8 s without clicks. *Disturbance strength* and *size* sliders.
-- `bird-sim-v22` (Nov 2026): two options for how a bird picks a spot, both off by default. *Joiners see the whole flock* widens its view from a narrow cone ahead (about 27° each side, 30 m) to about 70° each side and 60 m. *Energy cost of catching up* prices the distance to a spot from energy: the extra power to fly faster than the flock, plus the drafting lost on the way, spread over the 20 s the bird expects to hold the spot. This is the same as the current `index.html`.
+- `bird-sim-v22` (Nov 2026): two options for how a bird picks a spot, both off by default. *Joiners see the whole flock* widens its view from a narrow cone ahead (about 27° each side, 30 m) to about 70° each side and 60 m. *Energy cost of catching up* prices the distance to a spot from energy: the extra power to fly faster than the flock, plus the drafting lost on the way, spread over the 20 s the bird expects to hold the spot.
+- `bird-sim-v23` (Nov 2026): fishing. Fish schools (automatic, or click the water to drop one), hungry birds that circle, plunge-dive with their wings really tucked, pop back up, drain and swallow, and run along the water to take off. A *Fishing lab* button sets up one hungry pelican and a school. With fishing off, seeded runs replay v22 exactly. This is the same as the current `index.html`.
 
 ## How the formation emerges (v13–v18)
 

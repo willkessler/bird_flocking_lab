@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v22</title>
+<title>Bird Flight Lab v23</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -89,7 +89,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v22</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v23</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -128,6 +128,9 @@
   <div id="leadTint" style="position:fixed;inset:0;pointer-events:none;z-index:4;display:none;
        box-shadow:inset 0 0 260px 50px rgba(70,150,255,0.30);
        background:radial-gradient(ellipse at center, rgba(80,160,255,0) 42%, rgba(70,150,255,0.18) 100%)"></div>
+  <div id="fishTag" style="position:fixed;bottom:96px;left:16px;z-index:5;display:none;
+       pointer-events:none;background:#0b0f14dd;border:1px solid var(--line);border-radius:12px;
+       padding:6px 12px;font-size:12px;line-height:1.4;color:var(--ink);max-width:min(560px, calc(100vw - 32px))"></div>
   <div id="povTag" style="position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:5;display:none;
        pointer-events:none;background:#0b0f14dd;border:1px solid var(--line);border-radius:16px;
        padding:6px 14px;font-size:12px;color:var(--ink);white-space:nowrap"></div>
@@ -218,6 +221,33 @@ const P = {
   fogDuration:1.2,             // s: how long it lasts
   fogBurst:5,                  // disturbances in a burst before it has to recharge
   fogCooldown:8,               // s of sim time with no clicks before the burst is fully recharged
+  // FISHING (v23): hungry birds that spot a school of fish circle over it, plunge-dive, surface, swallow,
+  // and take off again; once full they climb back to the flock. See fishControl().
+  fishing:0,                   // hungry birds go fishing when they see a school
+  autoSchools:1,               // schools turn up on their own ahead of the flock
+  dropSchool:0,                // click the water to put a school there
+  diveSlowmo:0,                // slow the sim while the bird you're watching dives
+  schoolEvery:60,              // s: a new school turns up about this often (auto)
+  schoolFish:30, schoolRadius:6, schoolLife:240,
+  hungerStart:0.8,             // how hungry each bird starts (0 = full, 1 = starving)
+  hungerRate:0.001,            // per s: how fast hunger comes back (0.001 = full to starving in ~17 min)
+  hungerGo:0.4,                // hungrier than this, a bird goes fishing when it sees fish
+  fullAt:0.1,                  // below this it's full and goes back to travelling
+  fishPerMeal:3,               // fish to go from starving to full
+  spotRange:150,               // m: how far away a bird notices a school (or a bird already fishing it)
+  circleAlt:13,                // m: circling height = dive height (the video: ~40 ft)
+  circleR:22,                  // m: circling radius
+  circleSpeed:10,              // m/s: circling airspeed
+  diveAngle:65,                // deg: how steep the roll-over pulls the dive before the bird tucks
+  diveRoll:110,                // deg: how far it rolls left to pull into the dive
+  tuckSweep:80,                // deg: how far the tucked wing sweeps back at the shoulder
+  steerMax:5,                  // m/s^2: steering a half-tucked bird can do while falling (none once fully tucked)
+  catchChance:0.7,             // chance of a catch for a dive into the middle of a full school
+  airSacs:1.6,                 // x weight: extra buoyancy from the breath it takes on hitting the water
+  swallowTime:6,               // s: draining the pouch before the fish is swallowed
+  restTime:3,                  // s: bobbing on the water before taking off again
+  footThrust:0.5,              // x weight: push from the feet running on the water during takeoff
+  waterSuction:0.35,           // x weight: the water's grip on the body until the bird breaks free
   // shoreline & surface skimming (ground-effect hydroplaning led by the lead bird)
   skimEnable:1, skimAlt:2.0, tipClear:0.2, skimPeriod:30, skimDuration:8,
   // launch
@@ -486,7 +516,19 @@ function makeBirdMesh(lead){
     pouch.position.set(headX + headR*0.5 + beakLen*0.26, headY - headR*0.52, 0);
     head.add(pouch);
   }
+  // pivot the head at the shoulders, so it can tip down (draining the pouch) and back (swallowing)
+  head.position.set(sX, sY, 0); for(const c of head.children){ c.position.x-=sX; c.position.y-=sY; }
   root.add(head);
+  // webbed feet: tucked away in flight, paddling on the water, running along it to take off
+  // (three.js gives every new object a random id; draw those from the unseeded generator, so adding feet
+  // doesn't shift a seeded run's random numbers and v22 results replay exactly)
+  const _seeded=Math.random; Math.random=_rand0;
+  const footMat=new THREE.MeshStandardMaterial({color:0x4a4038, roughness:0.9, side:THREE.DoubleSide});
+  const fgeo=new THREE.BufferGeometry(); const fl=bodyR*0.75;
+  fgeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, -fl,-bodyR*0.25,fl*0.45, -fl,-bodyR*0.25,-fl*0.45],3)); fgeo.computeVertexNormals();
+  const feet=[]; for(const sg of [1,-1]){ const leg=new THREE.Group(); leg.position.set(-torsoLen*0.2, -bodyR*0.7, sg*bodyR*0.35);
+    const fm=new THREE.Mesh(fgeo, footMat); fm.userData.noShadow=true; leg.add(fm); leg.visible=false; root.add(leg); feet.push(leg); }
+  Math.random=_seeded;
 
   const tg = new THREE.BufferGeometry();
   const tl = P.tailLen*0.9, tw = Math.sqrt(P.tailArea)*1.1;
@@ -497,6 +539,7 @@ function makeBirdMesh(lead){
   const shoulderX = bodyLen*0.15, shoulderY = bodyR*0.55, shoulderZ = bodyR*0.7, L1 = P.span*P.innerFrac;
   function mkWing(sign){
     const shoulder=new THREE.Group(); shoulder.position.set(shoulderX, shoulderY, sign*shoulderZ);
+    shoulder.rotation.order='YXZ';                          // raise/flap first, then sweep back (tuck)
     const inner=new THREE.Group(); shoulder.add(inner);
     inner.add(new THREE.Mesh(buildWingSeg(sign,0,P.innerFrac), wingMat));
     const elbow=new THREE.Group(); elbow.position.set(0,0,sign*L1); shoulder.add(elbow);
@@ -522,7 +565,7 @@ function makeBirdMesh(lead){
     const ln=new THREE.Line(g,new THREE.LineBasicMaterial({color:c,transparent:true,opacity:0.4}));
     ln.frustumCulled=false; flockRoot.add(ln); return ln; };
   const trailR=mkTrail(lead?0xffd18a:0xffb454), trailL=mkTrail(lead?0x8fe9df:0x4bd6c9);
-  return {root, skin, trailR, trailL, wingMats:[wingMat, wingMat2],
+  return {root, skin, trailR, trailL, wingMats:[wingMat, wingMat2], head, feet,
           wingR:R.shoulder, wingRin:R.inner, wingRelbow:R.elbow, wingRout:R.outer, wingRtips:R.feathers,
           wingL:Lw.shoulder, wingLin:Lw.inner, wingLelbow:Lw.elbow, wingLout:Lw.outer, wingLtips:Lw.feathers, tail};
 }
@@ -692,6 +735,10 @@ function makeBirdState(x0, z0){
     fatigue:0, pS:0, vigor:1, drive:0, wander:0, vzCmd:null,
     upL:0, upR:0, dfL:0, dfR:0,
     trailR:[], trailL:[],
+    // fishing: what I'm doing (fly | circle | dive | under | swim | takeoff), how hungry I am, the school
+    // I'm working, and my wing pose (tuck = sweep back + fold; wRaise = wings lifted above the back)
+    mode:'fly', modeT:0, hunger:P.hungerStart, caught:0, school:null, tuck:0, wRaise:0, headPitch:0,
+    attQ:null, flapBias:0, aimA:0.45, aimL:0.35,
     tel:{lift:0,thrust:0,drag:0,dragScalar:0,weight:P.mass*G,aoa:0,power:0,cyc:0,cycThrust:0,gap:0,coasting:false,foldDeg:0}
   };
   st.quat.setFromEuler(new THREE.Euler(0,0,a*0.4,'XYZ'));
@@ -728,6 +775,7 @@ function resetFlock(){
   recomputeDerived();
   for(const st of birds) disposeMesh(st.mesh);
   birds=[]; order=[]; lastFront=-1; windT=0; pockets=[]; fogCharges=P.fogBurst; fogLastT=-1e9;
+  clearSchools(); fishLog.length=0; schoolTimer=5;
   const n=Math.max(1, Math.round(P.nBirds));
   const iv=P.individuality||0;
   for(let i=0;i<n;i++){
@@ -739,6 +787,7 @@ function resetFlock(){
     st.fatigue = Math.random()*0.3;
     // quirks: this bird's own leanings, drawn once and scaled live by P.quirk (see qk())
     st.qr = {fd:gauss(), lat:gauss(), side:gauss(), alt:gauss(), look:Math.random()};
+    { const h=Math.sin(i*12.9898+4.1)*43758.5453; st.hunger = clamp(P.hungerStart*(0.85+0.3*(h-Math.floor(h))), 0, 1); }   // not from the seeded RNG, so seeded runs match v22
     st.mesh = makeBirdMesh(i===0);
     birds.push(st); order.push(i);
   }
@@ -860,6 +909,7 @@ function rot(v,k,th){
 
 // Commanded wingbeat: warped phase for down/up asymmetry. Returns beta and its 1st & 2nd
 // derivatives w.r.t. phase (the 2nd is used by the muscle motor controller).
+let flapBias=0;
 function flapKinematics(phase){
   const dwn = clamp(0.5 - P.upDownAsym*0.5, 0.15, 0.85);
   const ph = ((phase%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
@@ -867,7 +917,7 @@ function flapKinematics(phase){
   if(ph < 2*Math.PI*dwn){ u=(ph/(2*Math.PI*dwn))*Math.PI; dudph=Math.PI/(2*Math.PI*dwn); }
   else { u=Math.PI+((ph-2*Math.PI*dwn)/(2*Math.PI*(1-dwn)))*Math.PI; dudph=Math.PI/(2*Math.PI*(1-dwn)); }
   const amp=P.flapAmp*DEG*flapAmpScale;   // flapAmpScale tapers the beat down before coasting
-  const beta   = amp*Math.cos(u);
+  const beta   = flapBias + amp*Math.cos(u);    // flapBias: beat centred higher (taking off from the water)
   const dbeta  = -amp*Math.sin(u)*dudph;              // dβ/dphase
   const d2beta = -amp*Math.cos(u)*dudph*dudph;        // d²β/dphase²
   return [beta, dbeta, d2beta];
@@ -915,21 +965,27 @@ function computeForces(st){
   const foldFrac = P.foldAmount * fold01;                       // 0..foldAmount
   const gamma = foldFrac * P.maxFoldDeg*DEG;                    // elbow flex angle (rad)
   const gammaDot = (flapping && upstroke && armUp>0 && armUp<1) ? P.foldAmount*(st.betaDot/ampR)*P.maxFoldDeg*DEG : 0;
-  st.fold = foldFrac;
   T.foldDeg = foldFrac*P.maxFoldDeg;
-  const foldNorm = clamp(gamma/Math.max(P.maxFoldDeg*DEG,1e-3), 0, 1);
+  // TUCK (diving / on the water): the wing sweeps back at the shoulder, the hand folds onto the arm, and
+  // the feathers slide over each other. It changes the real geometry the strips see, so the lift goes.
+  const tuck=clamp(st.tuck||0,0,1), sig=tuck*P.tuckSweep*DEG, swept=sig>0.01;
+  const gammaT = Math.max(gamma, tuck*0.25*P.maxFoldDeg*DEG);   // the hand stays nearly in line: long swept blades (the stills)
+  st.fold = gammaT/Math.max(P.maxFoldDeg*DEG,1e-3);
+  const tuckArea = 1 - 0.75*tuck;
+  const foldNorm = clamp(gammaT/Math.max(P.maxFoldDeg*DEG,1e-3), 0, 1);
+  const _Y = V3(0,1,0);
 
   const L1 = P.span*P.innerFrac;                                // inner (humerus) length
   let Iflap = 0;                                                // dynamic flap inertia (both wings)
 
   // one blade element. twistRad = geometric AoA (rad); dAaero for forces, dAmass for inertia/gravity.
-  function addStrip(sign, s, p, rFromSh, vWing, twistRad, dAaero, dAmass){
+  function addStrip(sign, s, p, rFromSh, vWing, twistRad, dAaero, dAmass, chord0){
     const rC = V3().subVectors(p, derived.com);
     const dpdb = V3().crossVectors(V3(-sign,0,0), rFromSh);     // d(pos)/d(flap angle): whole wing about shoulder x
     const mstrip = derived.mWing*dAmass/Math.max(derived.wingArea,1e-4);
     Iflap += mstrip*dpdb.lengthSq();
     Qgrav += gBody.dot(dpdb)*mstrip;
-    let chord=V3(1,0,0), normal=V3().crossVectors(s,chord); if(normal.y<0) normal.negate(); normal.normalize();
+    let chord=chord0 ? chord0.clone() : V3(1,0,0), normal=V3().crossVectors(s,chord); if(normal.y<0) normal.negate(); normal.normalize();
     const tw=twistRad*sign;
     chord=rot(chord,s,tw); normal=rot(normal,s,tw);
     const vRot=V3().crossVectors(st.omega, rC);
@@ -949,8 +1005,12 @@ function computeForces(st){
       geMul=1+P.geStrength*0.22*ge;                   // modest extra lift (kept small so it doesn't bounce the bird out of GE)
       CD=P.cd0+(CD-P.cd0)*(1-Math.min(0.9,0.9*P.geStrength*ge)); // induced drag largely collapses near the surface -> long cheap glides
     }
-    const q=0.5*P.rho*sp2;
-    const L=q*dAaero*CL*geMul, D=q*dAaero*CD;
+    // A swept-back (tucking) wing only lifts on the flow ACROSS it -- the part along the span just
+    // rubs past (sweep theory). Fully tucked, the span lies along the body, the flow runs down it, and
+    // the wing stops lifting; what's left is skin friction.
+    const qv = swept ? uc*uc+un*un : sp2;
+    const q=0.5*P.rho*qv;
+    const L=q*dAaero*CL*geMul, D=q*dAaero*CD + (swept ? 0.5*P.rho*(sp2-qv)*dAaero*P.cd0 : 0);
     let liftDir=V3().crossVectors(vRel,s); if(liftDir.lengthSq()<1e-9) return;
     liftDir.normalize(); if(liftDir.dot(normal)<0) liftDir.negate();
     const dragDir=V3().copy(vRel).normalize();
@@ -962,16 +1022,20 @@ function computeForces(st){
   }
 
   for(const sign of [+1,-1]){
-    const be = st.beta + dih;
-    const s1 = V3(0, Math.sin(be), sign*Math.cos(be));           // inner spanwise
+    const be = st.beta + dih + (st.wRaise||0);
+    const th = -sign*sig;                                        // sweep back about body-up
+    const s1raw = V3(0, Math.sin(be), sign*Math.cos(be));
+    const s1 = swept ? rot(s1raw, _Y, th) : s1raw;               // inner spanwise
+    const chordB = swept ? rot(V3(1,0,0), _Y, th) : null;
     const shoulder = V3(P.rootChord*0.1, 0.02, sign*0.03);
-    let n1 = V3().crossVectors(s1, V3(1,0,0)); if(n1.y<0) n1.negate(); n1.normalize();  // wing normal = fold axis
+    let n1 = V3().crossVectors(s1, chordB||V3(1,0,0)); if(n1.y<0) n1.negate(); n1.normalize();  // wing normal = fold axis
     const omega1 = V3(-sign*st.betaDot, 0, 0);                   // inner-segment angular velocity (flap)
     const elbow = shoulder.clone().addScaledVector(s1, L1);
     // Elbow flexion is IN-PLANE, about the wing normal -- exactly like a real elbow, which
     // hinges in one plane; it cannot bend up/out of the wing. The hand sweeps back within
     // the (raised) wing plane, so a raised arm's swept hand naturally drops below the elbow.
-    let s2=rot(s1, n1, -sign*gamma);                            // in-plane backsweep
+    let s2=rot(s1, n1, -sign*gammaT);                           // in-plane backsweep
+    const chord2 = swept ? rot(chordB, n1, -sign*gammaT) : null;
     const omegaFold=n1.clone().multiplyScalar(-sign*gammaDot);
     const elbowVel = V3().crossVectors(omega1, V3().subVectors(elbow, shoulder));
 
@@ -981,10 +1045,11 @@ function computeForces(st){
       const c=P.rootChord*(1-(1-P.taper)*gf);
       const sw=-Math.tan(P.sweep*DEG)*r;
       const dA=c*(P.innerFrac*P.span/NS1);
-      const p=V3(shoulder.x+sw+0.10*c, shoulder.y, shoulder.z).addScaledVector(s1, r);
+      const p = swept ? V3(sw+0.10*c,0,0).applyAxisAngle(_Y, th).add(shoulder).addScaledVector(s1, r)
+                      : V3(shoulder.x+sw+0.10*c, shoulder.y, shoulder.z).addScaledVector(s1, r);
       const rFromSh=V3().subVectors(p, shoulder);
       const vWing=V3().crossVectors(omega1, rFromSh);
-      addStrip(sign, s1, p, rFromSh, vWing, P.innerAoA*DEG+feath, dA, dA);
+      addStrip(sign, s1, p, rFromSh, vWing, P.innerAoA*DEG+feath, dA*tuckArea, dA, chordB);
     }
     // OUTER segment (hand-wing that folds on the upstroke)
     for(let j=0;j<NS2;j++){
@@ -993,11 +1058,12 @@ function computeForces(st){
       const sw=-Math.tan(P.sweep*DEG)*(gf*P.span);
       const dA=c*((1-P.innerFrac)*P.span/NS2);
       const areaF=Math.max(1-0.45*foldNorm, 0.3);                // feather overlap reduces exposed area when folded
-      const p=V3(elbow.x+sw+0.10*c, elbow.y, elbow.z).addScaledVector(s2, r2);
+      const p = swept ? V3(sw+0.10*c,0,0).applyAxisAngle(_Y, th).add(elbow).addScaledVector(s2, r2)
+                      : V3(elbow.x+sw+0.10*c, elbow.y, elbow.z).addScaledVector(s2, r2);
       const rFromSh=V3().subVectors(p, shoulder);
       const rFromEl=V3().subVectors(p, elbow);
       const vWing=V3().copy(elbowVel).add(V3().crossVectors(V3().addVectors(omega1, omegaFold), rFromEl));
-      addStrip(sign, s2, p, rFromSh, vWing, P.outerAoA*DEG+feath, dA*areaF, dA);
+      addStrip(sign, s2, p, rFromSh, vWing, P.outerAoA*DEG+feath, dA*areaF*tuckArea, dA, chord2);
     }
   }
   derived.IflapDyn = Math.max(1e-4, Iflap);
@@ -1062,7 +1128,9 @@ function computeForces(st){
   // the wingbeat still provides all the FORWARD thrust (emergent, not assisted), and a coast
   // still bleeds SPEED to drag (which is what drives the drafting wave) -- this only stops the
   // height from wandering. Capped well under a g so it's a trim, not a lift jet.
-  if(st.targetAlt!=null && P.flapStrategy==='intermittent'){
+  // diving or taking off from the water, the bird is on its own: no height-holding trim, no water cushion
+  const free = st.mode==='dive' || st.mode==='takeoff';
+  if(!free && st.targetAlt!=null && P.flapStrategy==='intermittent'){
     // Cap is generous (1.0 W) but only ever bites on a BIG vertical move -- at cruise the error is
     // tiny so the trim is a whisper. The headroom is what lets the flock actually DESCEND to skim:
     // a coasting glide speeds up and its lift climbs past W, so a weak cap couldn't overcome the
@@ -1082,7 +1150,7 @@ function computeForces(st){
   // Over the beach or a jetty it's the ground under the bird that counts, not sea level.
   const gnd = P.avoidObstacles ? obstacleH(st.pos.x, st.pos.z) : 0;
   const cushTop = Math.min(1.6, 0.8*(st.targetAlt==null ? 2 : Math.max(st.targetAlt - gnd, 0.5)));
-  if(st.pos.y - gnd < cushTop){
+  if(!free && st.pos.y - gnd < cushTop){
     const d = cushTop - (st.pos.y - gnd);
     netWorld.y += P.mass*((20/cushTop)*d + (st.vel.y<0 ? -5.0*st.vel.y : 0));
   }
@@ -1104,7 +1172,7 @@ function computeForces(st){
   // ---- ACTIVE STABILIZATION: a bird's tail/head/wing reflexes (closed-loop).
   // Drives pitch toward a trim attitude and levels roll, with a yaw damper. At
   // stab=0 you get the raw open-loop dynamics (phugoid, upsets); turn it up to fly.
-  if(P.stab>0){
+  if(P.stab>0 && !st.attQ){
     const fwd=V3(1,0,0).applyQuaternion(st.quat);
     const right=V3(0,0,1).applyQuaternion(st.quat);
     // In flap-coast, hold the flock's altitude line by commanding pitch (outer loop):
@@ -1139,7 +1207,8 @@ function computeForces(st){
     const aRoll =(+1.4*wn*wn*rollErr - 2*6.5*wn*st.omega.x)*g;
     // Yaw: +sign restores heading toward the commanded heading (about body-up, +omega.y DECREASES
     // heading). Strong yaw-rate damping keeps the Dutch-roll mode dead.
-    const aYaw  =(+0.7*wn*wn*head - 2*6.5*wn*st.omega.y)*g;
+    // (st.yawRate: a steady turn I'm flying, e.g. circling -- damp relative to it, or the damper holds the nose back)
+    const aYaw  =(+0.7*wn*wn*head - 2*6.5*wn*(st.omega.y + (st.yawRate||0)))*g;
     torqueBody.z += derived.I.z*aPitch;
     torqueBody.x += derived.I.x*aRoll;
     torqueBody.y += derived.I.y*aYaw;
@@ -1161,6 +1230,14 @@ function computeForces(st){
   T.aeroWorld = aeroWorld;
   T.flightDir = flightDir;
   T.Fg = Fg;
+
+  // dive steering (a half-tucked wing and the tail nudging the fall) and the water during a takeoff run
+  if(st.steer) netWorld.addScaledVector(st.steer, P.mass);
+  if(st.latAcc && st.mode==='circle'){                     // circling: the turn (see circleControl)
+    const vh=Math.hypot(st.vel.x, st.vel.z)||1e-3;
+    netWorld.x += P.mass*st.latAcc*(-st.vel.z/vh); netWorld.z += P.mass*st.latAcc*(st.vel.x/vh);
+  }
+  if(st.mode==='takeoff') takeoffWater(st, netWorld, T);
 
   return {netWorld, torqueBody, Qaero, Qgrav};
 }
@@ -1187,7 +1264,9 @@ let flapAmpScale=1;   // 1 normally; tapers <1 as the bird eases out of a flap b
 // has already set st.flapping, st.ampScale, st.cmdRoll/cmdYaw and st.wakeWind.
 function stepBird(st, dt){
   const T = st.tel;
+  if(st.mode==='under' || st.mode==='swim'){ waterStep(st, dt); st.t += dt; return; }
   flapAmpScale = st.ampScale || 1;             // per-bird beat taper (read by flapKinematics)
+  flapBias = st.flapBias || 0;
 
   if(!st.flapping){
     // COAST: relax the wing to its glide angle and glide -- no flapping thrust, so the
@@ -1244,6 +1323,8 @@ function stepBird(st, dt){
   T.cyc += dt;
   T.cycThrust = 0.98*T.cycThrust + 0.02*(T.thrust||0);
   st.t += dt;
+  flapBias = 0;
+  if(st.mode==='dive' && st.pos.y <= 0.12) waterEntry(st);
 }
 
 /* ---------------------------------------------------- FLOCK CONTROL (per bird) */
@@ -1273,6 +1354,314 @@ function stepBird(st, dt){
 //                 leading with a big hole behind me, I ease off so it can close.
 // And no two birds are alike (quirk): each has its own spacing, wingtip reach, favourite side and height,
 // and sometimes misjudges which spot is best.
+/* ============================================================ FISHING (v23) ======================
+ Pelicans are plunge-divers. A hungry bird that sees a school of fish -- or a bird already fishing one --
+ leaves the flock and circles over it about 13 m up. When it has the school lined up it rolls over to the
+ left, pulls its nose down into a steep dive, sweeps its wings back, and in the last few metres folds them
+ flat against its body, so it hits the water as an arrow (~18 m/s from 13 m, as in the PBS footage). The
+ tuck is real geometry in the aero model (computeForces), so the lift really does go away and the fall is
+ ballistic. On impact it gulps air into the air sacs in its bones and under its skin, so it pops back up
+ within a second or so. On the water it drains its pouch and swallows (if it caught something), bobs a
+ little, then runs along the surface with its feet while flapping hard until it breaks free of the water.
+ Still hungry, it climbs back to circle; full, it climbs back up to the flock.
+ Modes: fly | circle (phase2 'approach' when lining up) | dive (roll, fall, arrow) | under | swim | takeoff. */
+let schools=[], schoolSeq=0, schoolTimer=5;
+const fishLog=[];
+const _fF=V3(), _fU=V3(), _fR=V3(), _fM=new THREE.Matrix4(), _dF=V3(), _dU=V3(), _wF=V3(), _UP=V3(0,1,0);
+function setMode(st, m){ st.mode=m; st.modeT=0; st.phase2=''; }
+function flying(b){ return b.mode==null || b.mode==='fly'; }
+function airborne(b){ return b.mode==null || b.mode==='fly' || b.mode==='circle'; }
+// attitude with the nose along f and the back toward u (world vectors), written into out
+function attitudeFrom(f, u, out){
+  _fF.copy(f).normalize();
+  _fU.copy(u); _fU.addScaledVector(_fF, -_fU.dot(_fF));
+  if(_fU.lengthSq()<1e-8) _fU.set(0,1,0).addScaledVector(_fF, -_fF.y);
+  _fU.normalize(); _fR.crossVectors(_fF, _fU);
+  _fM.makeBasis(_fF, _fU, _fR);
+  return (out||new THREE.Quaternion()).setFromRotationMatrix(_fM);
+}
+function intoWind(){ const w=windWorld(); return Math.abs(w.x)+Math.abs(w.z)>0.05 ? Math.atan2(-w.z, -w.x) : 0; }
+
+// ---- fish schools
+function addSchool(x, z, o={}){
+  if(terrainH(x,z) > -0.5) return null;                 // open water only
+  const n = o.fish!=null ? o.fish : P.schoolFish;
+  const s={id:schoolSeq++, x, z, r:o.r||P.schoolRadius, fish:n, fish0:n, t0:windT, life:o.life||P.schoolLife,
+           vx:(Math.random()-0.5)*0.3, vz:(Math.random()-0.5)*0.3, scatter:0, fishers:0, gone:false, fade:0};
+  if(typeof buildSchoolFx==='function') s.fx=buildSchoolFx(s);
+  schools.push(s); return s;
+}
+function clearSchools(){ for(const s of schools) if(s.fx) disposeSchoolFx(s); schools=[]; }
+function updateSchools(dt){
+  for(let i=schools.length-1;i>=0;i--){ const s=schools[i];
+    s.x+=s.vx*dt; s.z+=s.vz*dt; s.scatter=Math.max(0, s.scatter-dt/3);
+    if(s.fish<=0 || windT-s.t0>s.life){ s.gone=true; s.fade+=dt; if(s.fade>4){ if(s.fx) disposeSchoolFx(s); schools.splice(i,1); } }
+  }
+  if(P.fishing && P.autoSchools && birds.length){
+    schoolTimer-=dt;
+    if(schoolTimer<=0){ schoolTimer=P.schoolEvery*(0.7+0.6*Math.random());
+      if(schools.filter(s=>!s.gone).length<2){
+        let fx=-1e9; for(const b of birds) fx=Math.max(fx, b.pos.x);
+        const x=fx+110+80*Math.random();
+        addSchool(x, coastFollow(x)-6+(Math.random()-0.5)*24);
+      } }
+  }
+  for(const s of schools) s.fishers=0;
+  for(const b of birds) if(b.school && !flying(b) && !b.school.gone) b.school.fishers++;
+}
+// what a bird can see: a school within spotRange, or failing that a bird already out there fishing one
+function spotSchool(st){
+  let best=null, bd=P.spotRange;
+  for(const s of schools){ if(s.gone) continue; const d=Math.hypot(s.x-st.pos.x, s.z-st.pos.z); if(d<bd){ bd=d; best=s; } }
+  if(best) return best;
+  for(const b of birds){ if(b===st || flying(b) || !b.school || b.school.gone) continue;
+    if(Math.hypot(b.pos.x-st.pos.x, b.pos.z-st.pos.z) < P.spotRange) return b.school; }
+  return null;
+}
+
+// ---- per-bird decisions (called from flockControl every step; true = it has steered this bird)
+function fishControl(st, dt){
+  st.modeT += dt;
+  if(P.fishing) st.hunger = Math.min(1, st.hunger + P.hungerRate*dt);
+  if(st.mode==='fly'){
+    if(!P.fishing || st.hunger<=P.hungerGo) return false;
+    st.lookFishT=(st.lookFishT||0)-dt; if(st.lookFishT>0) return false; st.lookFishT=0.5;
+    const s=spotSchool(st); if(!s) return false;
+    st.school=s; setMode(st,'circle'); st.circT=0;
+    st.circAlt=P.circleAlt*(0.9+0.2*Math.random()); st.orbitR=P.circleR*(0.85+0.3*Math.random());
+    st.target=null; st.passing=null; st.climbing=false;
+    if(typeof showSight==='function') showSight(st, s);
+  }
+  if(st.mode==='circle') return circleControl(st, dt);
+  if(st.mode==='dive') return diveControl(st, dt);
+  if(st.mode==='takeoff') return takeoffControl(st, dt);
+  if(st.mode==='swim') return swimControl(st, dt);
+  return true;                                             // under water: waterStep does it all
+}
+function backToFlock(st){
+  st.latAcc=0; st.yawRate=0; st.school=null; setMode(st,'fly'); st.climbing=true; st.climbAlt=st.pos.y; st.attQ=null; st.steer=null;
+  return false;
+}
+
+// CIRCLE: a left-hand orbit over the school at circling height; after a few laps, turn in and line up a dive
+function circleControl(st, dt){
+  const T=st.tel, full=st.hunger<P.fullAt;
+  let S=st.school;
+  if(!P.fishing || full || !S || S.gone){
+    S = (!full && P.fishing) ? spotSchool(st) : null;
+    if(!S) return backToFlock(st);
+    st.school=S;
+  }
+  const heading=Math.atan2(st.vel.z, st.vel.x), vh=Math.hypot(st.vel.x, st.vel.z);
+  const ex=st.pos.x-S.x, ez=st.pos.z-S.z, d=Math.hypot(ex,ez)||1e-3, R=st.orbitR;
+  let psiCmd, ff=0;
+  st.circT += dt;
+  if(st.phase2==='approach'){
+    // fly at the school, aiming off to the right by as much as my left-hand roll-in will carry me left
+    st.apT += dt;
+    const tf=Math.sqrt(2*Math.max(st.pos.y,1)/G);
+    const dA=st.aimA*vh*tf, dL=st.aimL*vh*tf;              // a dive from here lands dA ahead and dL left
+    const hx=Math.cos(heading), hz=Math.sin(heading), rx=-hz, rz=hx;   // right of my track
+    const ax=S.x+rx*dL, az=S.z+rz*dL, tx=ax-st.pos.x, tz=az-st.pos.z;
+    psiCmd=Math.atan2(tz, tx);
+    const along=tx*hx+tz*hz;
+    const px=st.pos.x+hx*dA-rx*dL, pz=st.pos.z+hz*dA-rz*dL;   // where I'd hit the water if I went now
+    const miss=Math.hypot(px-S.x, pz-S.z);
+    if(miss<0.35*S.r && Math.abs(wrapPi(psiCmd-heading))<0.4 && st.pos.y>st.circAlt-3){ startDive(st, S); return diveControl(st, dt); }
+    // pointed at it but already too close to dive (or it's taking too long): go round again
+    if((Math.abs(wrapPi(psiCmd-heading))<0.5 && along<0.5*dA) || st.apT>12){ st.phase2=''; st.aborts=(st.aborts||0)+1; }
+  } else {
+    const radial=Math.atan2(ez, ex);
+    psiCmd = radial - Math.PI/2 - Math.atan(0.12*(d-R));     // tangent of a left-hand orbit, pulled onto radius R
+    ff = -(vh/R)*Math.exp(-Math.pow((d-R)/(0.6*R),2));      // the turn rate of the orbit itself (left)
+    if(st.circT>(st.lapT||(st.lapT=4+5*Math.random())) && Math.abs(d-R)<0.4*R && st.pos.y>st.circAlt-1.5){
+      st.phase2='approach'; st.apT=0; st.lapT=null; st.circT=0; }
+  }
+  // Turning: like sideways station-keeping in the flock, the turn is a capped steering force (standing in
+  // for the bank and the pull a bird uses) toward the heading I want; the bank is shown on the body.
+  const err=wrapPi(psiCmd-heading);
+  const rate = ff + 1.6*err;                               // heading rate I want (rad/s, + = to the right)
+  st.latAcc = clamp(vh*rate, -7.5, 7.5); st.yawRate = st.latAcc/Math.max(vh,3);
+  st.hdgCmd = heading + clamp(err, -0.3, 0.3);
+  st.bankCmd = 0; st.bankVis = -Math.atan(st.latAcc/G);
+  // height: ease toward circling height (climbing after a takeoff, settling down from cruise)
+  const ta=st.targetAlt==null ? st.pos.y : st.targetAlt, step=clamp(st.circAlt-ta, -2*dt, 2.5*dt);
+  st.targetAlt=ta+step; st.targetVy=0.9*(st.targetVy||0)+0.1*step/Math.max(dt,1e-4);
+  const hErr=st.targetAlt-st.pos.y;
+  st.altTrim=clamp((st.altTrim||0)+dt*(Math.abs(hErr)<2.5 ? 0.8*hErr : -0.2*(st.altTrim||0)), -3, 4);
+  // flap to hold circling airspeed and height, glide otherwise
+  const asp=st.aspS||P.circleSpeed, demand=1.6*(P.circleSpeed-asp)+0.6*hErr, slow=asp<0.78*P.paceSpeed;
+  if(demand>0.25 || slow){ st.flapping=true; st.ampScale=clamp(0.3+0.42*demand+(slow?0.4:0), 0.3, 1); }
+  else { st.flapping=false; st.ampScale=0; }
+  T.coasting=!st.flapping; st.flapDuty=0.996*(st.flapDuty==null?1:st.flapDuty)+0.004*(st.flapping?1:0);
+  st.vzCmd=null; st.draftGate=1; st.brake=0; st.cmdRoll=st.bankVis; st.target=null; st.vPref=P.circleSpeed; st.steer=null;
+  st.tuck=Math.max(0, st.tuck-1.5*dt); st.wRaise=Math.max(0, st.wRaise-1.5*dt); st.flapBias=Math.max(0, (st.flapBias||0)-0.5*dt);
+  T.gap=0;
+  return true;
+}
+
+function startDive(st, S){
+  st.latAcc=0; st.yawRate=0; st.cmdRoll=0; setMode(st,'dive'); st.phase2='roll'; st.diveSchool=S; st.twist=0; st.fallT=0;
+  st.flapping=false; st.ampScale=0; st.attQ=new THREE.Quaternion().copy(st.quat); st.steer=V3();
+  const vh=Math.hypot(st.vel.x, st.vel.z);
+  st.diveLog={bird:st.id, t:+windT.toFixed(2), h0:+st.pos.y.toFixed(2), v0:+st.vel.length().toFixed(2),
+              x0:st.pos.x, z0:st.pos.z, hdg0:Math.atan2(st.vel.z, st.vel.x), vh0:vh, maxV:0, tFall:null};
+}
+// DIVE: roll left and pull the nose down (wings a little swept), then -- steep enough -- roll back, sweep
+// the wings back 45-50 deg and lift them into a V over the back (the stills), steering a little; in the
+// last metres fold them flat against the body (the arrow) and twist to the left.
+function diveControl(st, dt){
+  const v=st.vel, sp=v.length()||1e-3, vh=Math.hypot(v.x, v.z), gam=Math.atan2(v.y, vh), L=st.diveLog;
+  L.maxV=Math.max(L.maxV, sp);
+  st.flapping=false; st.ampScale=0; st.tel.coasting=true; st.vzCmd=null; st.brake=0;
+  const hx=vh>1e-3 ? v.x/vh : Math.cos(L.hdg0), hz=vh>1e-3 ? v.z/vh : Math.sin(L.hdg0);
+  _dF.set(hx*Math.cos(gam), Math.sin(gam), hz*Math.cos(gam));        // along my path
+  _dU.set(-hx*Math.sin(gam), Math.cos(gam), -hz*Math.sin(gam));      // my back, for a bird diving straight
+  let roll, aoa, tuckT, raiseT;
+  if(st.phase2==='roll'){
+    const k=Math.min(1, st.modeT/0.3);
+    roll=-P.diveRoll*DEG*k; aoa=12*DEG*k; tuckT=0.15; raiseT=0.1;
+ st.steer.set(0,0,0); st.brake=0.4;                     // primaries spread: shed speed so the dive comes out steep
+    if(gam < -P.diveAngle*DEG || st.modeT>1.0 || st.pos.y<4){ st.phase2='fall'; st.fallT=0; L.tRoll=+st.modeT.toFixed(2); L.hRoll=+st.pos.y.toFixed(2); }
+  } else {
+    st.fallT += dt;
+    const y=Math.max(st.pos.y, 0), ti=(v.y+Math.sqrt(v.y*v.y+2*G*y))/G;   // time until I hit the water
+    if(st.phase2==='fall' && (st.pos.y<3 || ti<0.3)) st.phase2='arrow';
+    if(st.phase2==='fall'){ roll=-P.diveRoll*DEG*Math.max(0, 1-st.fallT/0.3); aoa=0; tuckT=0.6; raiseT=0.8; }
+    else { st.twist=Math.min(1, st.twist+dt/0.35); roll=-70*DEG*st.twist; aoa=0; tuckT=1; raiseT=0.2; }
+    // aim: where would I hit the water falling from here? nudge toward the fish while the wings can steer
+    const S=st.diveSchool, amax=P.steerMax*clamp((1-st.tuck)/0.4, 0, 1);
+    if(S && !S.gone && ti>0.05){
+      const px=st.pos.x+v.x*ti, pz=st.pos.z+v.z*ti;
+      st.steer.set(clamp(2*(S.x-px)/(ti*ti), -amax, amax), 0, clamp(2*(S.z-pz)/(ti*ti), -amax, amax));
+    } else st.steer.set(0,0,0);
+  }
+  _dU.applyAxisAngle(_dF, roll);
+  const f=V3().copy(_dF).multiplyScalar(Math.cos(aoa)).addScaledVector(_dU, Math.sin(aoa));
+  attitudeFrom(f, _dU, st.attQ);
+  const a=1-Math.exp(-dt/0.12);
+  st.tuck += (tuckT-st.tuck)*a; st.wRaise += (raiseT*60*DEG-st.wRaise)*a;
+  return true;
+}
+
+function waterEntry(st){
+  const v=st.vel, sp=v.length(), vh=Math.hypot(v.x, v.z), ang=Math.atan2(-v.y, vh)*RAD;
+  const S=st.diveSchool, L=st.diveLog;
+  let miss=null, caught=false;
+  if(S && !S.gone){
+    miss=Math.hypot(st.pos.x-S.x, st.pos.z-S.z);
+    const pc=P.catchChance*clamp(1.15-miss/S.r, 0, 1)*clamp(0.4+0.6*S.fish/S.fish0, 0, 1);
+    caught = S.fish>0 && Math.random()<pc;
+    if(caught) S.fish--;
+    S.scatter=1;
+  }
+  // learn where my dives land relative to where I started them, in my starting heading's frame
+  const hx=Math.cos(L.hdg0), hz=Math.sin(L.hdg0), dx=st.pos.x-L.x0, dz=st.pos.z-L.z0;
+  const along=dx*hx+dz*hz, left=-(dx*(-hz)+dz*hx), base=L.vh0*Math.sqrt(2*Math.max(L.h0,1)/G);
+  if(base>1){ st.aimA += 0.5*(along/base-st.aimA); st.aimL += 0.5*(left/base-st.aimL); }
+  Object.assign(L, {tFall:+(windT-L.t).toFixed(2), vEntry:+sp.toFixed(2), mph:+(sp*2.237).toFixed(1), angle:+ang.toFixed(1),
+    maxV:+L.maxV.toFixed(2), miss:miss==null?null:+miss.toFixed(2), caught, along:+along.toFixed(1), left:+left.toFixed(1)});
+  fishLog.push(L); st.lastDive=L; st.carrying=caught;
+  if(typeof splash==='function') splash(st.pos.x, st.pos.z, sp);
+  setMode(st,'under'); st.breath=0; st.maxDepth=0; st.steer=null; st.tuck=1; st.swimHdg=intoWind();
+}
+
+// UNDER / SWIM: simple water physics instead of the air model
+function waterStep(st, dt){
+  const W=P.mass*G, v=st.vel, y=st.pos.y, F=_wF.set(0,-W,0), T=st.tel;
+  st.flapping=false; st.ampScale=0; T.coasting=true; T.power=0; st.betaDot=0;
+  st.beta += (0-st.beta)*Math.min(1, dt*4); st.fold=0.9*st.tuck;
+  let tau=0.12;
+  if(st.mode==='under'){
+    // the gulp of air on impact fills the air sacs: buoyancy builds over a quarter second and up it comes
+    st.breath=Math.min(1, st.breath+dt/0.25);
+    const sub=clamp((0.15-y)/0.3, 0, 1);
+    F.y += sub*W*(1.15 + P.airSacs*st.breath);
+    const CdA=0.006 + 0.05*clamp(st.modeT/0.5, 0, 1);       // an arrow going in, then it spreads and turns
+    F.addScaledVector(v, -0.5*1000*CdA*sub*v.length());
+    st.maxDepth=Math.max(st.maxDepth, -y);
+    tau = st.modeT<0.2 ? 1 : 0.25;                          // turns underwater to come up level, into the wind
+    st.tuck += (0.9-st.tuck)*Math.min(1, dt*3); st.wRaise *= 1-Math.min(1, dt*4);
+    if((y>-0.05 && v.y>0 && st.modeT>0.2) || st.modeT>4){
+      const L=st.lastDive; if(L){ L.depth=+st.maxDepth.toFixed(2); L.tUnder=+st.modeT.toFixed(2); }
+      setMode(st,'swim'); st.swimPhase=st.carrying ? 'drain' : 'rest'; st.phaseT2=0;
+      if(typeof ringAt==='function') ringAt(st.pos.x, st.pos.z, 0.3, 1.6, 0.9, 0.5);
+    }
+  } else {
+    const yf=0.04 + 0.03*Math.sin(windT*1.7 + st.id);      // riding the swell
+    if(y < yf+0.15) F.y += P.mass*(G + 30*(yf-y) - 5*v.y);
+    const vt=0.3, h=st.swimHdg;                             // paddling slowly, into the wind
+    F.x += P.mass*1.2*(Math.cos(h)*vt - v.x); F.z += P.mass*1.2*(Math.sin(h)*vt - v.z);
+    st.tuck += (1-st.tuck)*Math.min(1, dt*3); st.wRaise *= 1-Math.min(1, dt*3);
+  }
+  v.addScaledVector(F, dt/P.mass); st.pos.addScaledVector(v, dt);
+  const h=st.swimHdg;
+  st.attQ = attitudeFrom(_dF.set(Math.cos(h), st.mode==='swim' ? 0.12 : 0, Math.sin(h)), _UP, st.attQ||new THREE.Quaternion());
+  st.quat.slerp(st.attQ, 1-Math.exp(-dt/tau)).normalize(); st.omega.set(0,0,0);
+  // resting: fatigue comes back down
+  st.pS += (0-st.pS)*Math.min(1, dt/4);
+  st.fatigue=clamp(st.fatigue - dt/Math.max(P.fatigueTime,1), 0, 1); T.fatigue=st.fatigue;
+}
+function swimControl(st, dt){
+  st.phaseT2 += dt;
+  const ph=st.swimPhase, a=k=>Math.min(1, dt*k);
+  if(ph==='drain'){                                        // bill down: tip the water out of the pouch
+    st.headPitch += (-0.45-st.headPitch)*a(3);
+    if(st.phaseT2>P.swallowTime){ st.swimPhase='swallow'; st.phaseT2=0; }
+  } else if(ph==='swallow'){                               // head back: down it goes
+    st.headPitch += (0.8-st.headPitch)*a(6);
+    if(st.phaseT2>1){ st.caught++; st.hunger=Math.max(0, st.hunger-1/P.fishPerMeal); st.carrying=false;
+      if(st.lastDive) st.lastDive.swallowed=true; st.swimPhase='rest'; st.phaseT2=0; }
+  } else {
+    st.headPitch += (0-st.headPitch)*a(2);
+    if(st.phaseT2>P.restTime) startTakeoff(st);
+  }
+  return true;
+}
+
+// TAKEOFF: into the wind, flapping hard with the beat raised so the tips mostly clear the water, feet
+// pattering along the surface, until the wings carry enough to break the water's grip
+function startTakeoff(st){
+  setMode(st,'takeoff'); st.flapping=true; st.ampScale=1; st.flapBias=18*DEG; st.airT=0; st.waterContact=1;
+  st.swimHdg=intoWind(); st.attQ=st.attQ||new THREE.Quaternion().copy(st.quat);
+  st.toLog={x:st.pos.x, z:st.pos.z, t:windT}; st.patterT=0;
+}
+function takeoffControl(st, dt){
+  const T=st.tel, h=st.swimHdg, vh=Math.hypot(st.vel.x, st.vel.z);
+  st.tuck=Math.max(0, st.tuck-dt/0.3); st.wRaise=Math.max(0, st.wRaise-dt/0.3); st.headPitch*=1-Math.min(1, dt*3);
+  st.flapping=true; st.ampScale=1; T.coasting=false; st.vzCmd=null; st.brake=0; st.steer=null; st.draftGate=1;
+  const pitch=(3+7*clamp(vh/8, 0, 1))*DEG;
+  attitudeFrom(_dF.set(Math.cos(h)*Math.cos(pitch), Math.sin(pitch), Math.sin(h)*Math.cos(pitch)), _UP, st.attQ);
+  if(st.waterContact>0){
+    st.airT=0; st.patterT-=dt;
+    if(st.patterT<=0 && typeof splash==='function'){ st.patterT=0.14; splash(st.pos.x, st.pos.z, 3.5, 10); }
+  } else st.airT+=dt;
+  if(st.airT>0.3 && st.pos.y>0.3){
+    const L=st.lastDive, tk={tRun:+(windT-st.toLog.t).toFixed(2), run:+Math.hypot(st.pos.x-st.toLog.x, st.pos.z-st.toLog.z).toFixed(1), vLift:+vh.toFixed(2)};
+    if(L && !L.takeoff) L.takeoff=tk; st.lastTakeoff=tk;
+    st.attQ=null; st.omega.set(0,0,0); st.targetAlt=st.pos.y; st.targetVy=0; st.altTrim=0;
+    if(P.fishing && st.hunger>=P.fullAt && st.school && !st.school.gone){ setMode(st,'circle'); st.circT=0; return circleControl(st, dt); }
+    return backToFlock(st);
+  }
+  if(st.modeT>10){ setMode(st,'swim'); st.swimPhase='rest'; st.phaseT2=0; st.flapBias=0; st.flapping=false; }   // try again
+  return true;
+}
+// the water's forces on a bird running to take off (added inside computeForces)
+function takeoffWater(st, F, T){
+  const W=P.mass*G, y=st.pos.y, v=st.vel, cf=0.75;          // cf: how deep it sits floating at rest
+  const c=clamp((0.16-y)/0.16, 0, 1.5);
+  st.waterContact=c;
+  if(c<=0){ T.footPush=0; return; }
+  const r=c/cf, vh=Math.hypot(v.x, v.z), h=st.swimHdg;
+  F.y += W*r;                                              // buoyancy
+  F.y -= P.waterSuction*W*Math.min(1, c/0.08);             // the water's grip, until the body is nearly clear
+  F.y -= 8*v.y*c;                                          // heaving through the surface
+  if(vh>1e-3){ const D=r*(1.0*vh+0.15*vh*vh); F.x -= D*v.x/vh; F.z -= D*v.z/vh; }   // ploughing (then planing) through the water
+  const push=P.footThrust*W*Math.min(1, c/0.1)*clamp(1-vh/9, 0, 1);            // feet running on the surface
+  F.x += push*Math.cos(h); F.z += push*Math.sin(h); F.y += 0.4*push;
+  T.footPush=push;
+}
+
 const _sL=V3(), _sR=V3();
 // Cost of getting to a spot (dx,dz away from me, in b's flight frame). Distance costs a little either
 // way. Overtaking costs extra when reachCost>0: every bird I'd have to pass on the way (ahead of me, short
@@ -1308,6 +1697,7 @@ function flockControl(st, dt){
   const gs=Math.hypot(st.vel.x, st.vel.z);                     // horizontal groundspeed
   st.gsS=(st.gsS==null)?gs:st.gsS+(gs-st.gsS)*0.02;
   st.phaseT=(st.phaseT||0)+dt;
+  if(fishControl(st, dt)) return;                            // fishing (v23): circling, diving, on the water
   const _fwd=V3(1,0,0).applyQuaternion(st.quat);
   const heading=Math.atan2(_fwd.z,_fwd.x);
   const fx=Math.cos(heading), fz=Math.sin(heading);          // my forward axis in (x,z)
@@ -1347,10 +1737,10 @@ function flockControl(st, dt){
     // the flock is ahead of me past a gap (I'm at the front of a group that has fallen behind)? Then I
     // rejoin it rather than dropping back to follow a bird behind me
     let minAhead=Infinity;
-    for(const b of birds){ if(b===st) continue; const a=rel(b)[0]; if(a>0.6) minAhead=Math.min(minAhead,a); }
+    for(const b of birds){ if(b===st || !flying(b)) continue; const a=rel(b)[0]; if(a>0.6) minAhead=Math.min(minAhead,a); }
     const rejoin = minAhead > 3*P.followDist && minAhead < P.wakeRange;
     for(const b of birds){
-      if(b===st || b.id===st.passing) continue;
+      if(b===st || b.id===st.passing || !flying(b)) continue;
       const [a,c,dy]=rel(b);
       if(rejoin && a<0.6) continue;
       const isAhead=ahead(a,c,dy); if(isAhead) anyAhead=true;
@@ -1428,7 +1818,7 @@ function flockControl(st, dt){
   // left behind, or I'm out to the side of them)? Steer toward the nearest and fly a little faster.
   let chase=null, chaseA=0, chaseC=0, chaseD=Infinity;
   if(lead && P.cohesion>0){
-    for(const b of birds){ if(b===st || b.id===st.passing) continue;
+    for(const b of birds){ if(b===st || b.id===st.passing || !flying(b)) continue;
       const [a,c]=rel(b); if(a<2 || a>P.chaseRange) continue;
       const d=Math.hypot(a,c); if(d<chaseD){ chaseD=d; chase=b; chaseA=a; chaseC=c; } }
   }
@@ -1545,13 +1935,13 @@ function flockControl(st, dt){
   let gap, desiredGap, aheadV;
   if(lead){
     let dBehind=Infinity;
-    for(const b of birds){ if(b===st) continue; const [a,c]=rel(b); if(a<-0.3) dBehind=Math.min(dBehind, Math.hypot(a,c)); }
+    for(const b of birds){ if(b===st || !flying(b)) continue; const [a,c]=rel(b); if(a<-0.3) dBehind=Math.min(dBehind, Math.hypot(a,c)); }
     const wait = isFinite(dBehind) ? clamp(1 - 0.05*(dBehind - 2*P.followDist), 0.8, 1) : 1;
     // cohesion: a big hole somewhere in the birds behind me (part of the flock has dropped away)? ease off
     // so it can catch up. Left behind myself, with birds in sight ahead? speed up to close on them.
     let hole=0, waitC=1;
     if(P.cohesion>0){
-      const backs=[]; for(const b of birds){ if(b===st) continue; const a=rel(b)[0]; if(a<-0.3 && a>-P.chaseRange) backs.push(-a); }
+      const backs=[]; for(const b of birds){ if(b===st || !flying(b)) continue; const a=rel(b)[0]; if(a<-0.3 && a>-P.chaseRange) backs.push(-a); }
       backs.sort((p,q)=>p-q);
       for(let i=1;i<backs.length;i++) hole=Math.max(hole, backs[i]-backs[i-1]);
       const big=Math.max(15, 3*P.followDist);                  // well past any normal gap between ranks
@@ -1605,6 +1995,8 @@ function flockControl(st, dt){
   } else st.altOff = (st.altOff||0)*(1 - Math.min(1, dt/2));
   if(sepUp) st.altOff = clamp(st.altOff + dt*1.2*sepUp, skimState==='cruise' ? -P.altFreedom-0.5 : -0.1*flockBaseAlt, P.altFreedom+0.5);
   let newAlt = flockBaseAlt + st.altOff;
+  // back from fishing: climb up to the flock's height at a steady 2 m/s rather than all at once
+  if(st.climbing){ st.climbAlt += 2*dt; if(st.climbAlt >= newAlt) st.climbing=false; else newAlt = st.climbAlt; }
   // something to clear ahead: climb to it (at up to 3 m/s), then settle back as it falls behind
   if(st.obsAlt > newAlt) newAlt = Math.min(st.obsAlt, (st.targetAlt==null ? newAlt : st.targetAlt) + 3*dt);
   // how fast the target height is moving (the dive / climb), so height-holding damps relative to it
@@ -1699,7 +2091,7 @@ function vortexUp(px, py, pz, other){
 // bird but 'self' -- what it expects to find at a spot it is thinking of flying to.
 function upwashAt(px, py, pz, hx, hz, self){
   const off=0.5*P.span; let u=0;
-  for(const o of birds){ if(o===self) continue;
+  for(const o of birds){ if(o===self || !airborne(o)) continue;
     for(let s=-1;s<=1;s++) u += vortexUp(px - hz*s*off, py, pz + hx*s*off, o); }
   return P.draftStrength*u/3;
 }
@@ -1721,11 +2113,11 @@ function computeWakes(){
     if(!st.wakeWind) st.wakeWind=V3();
     st.wakeWind.set(0,0,0); st.tel.upwash=0; st.draftFactor=0; st.tel.draft=0;
     st.upL=st.upR=st.upU=st.upD=st.dfL=st.dfR=0;
-    if(!P.draft) continue;
+    if(!P.draft || !airborne(st)) continue;
     const nx=-st._hz, nz=st._hx;
     uS.fill(0); dS.fill(0); let fdx=0, fdz=0;
     for(const other of birds){
-      if(other===st) continue;
+      if(other===st || !airborne(other)) continue;
       for(let s=0;s<5;s++){                     // 0 = my -side half-wing, 1 = body, 2 = my +side half-wing,
         const lo=s<3 ? (s-1)*off : 0;           // 3/4 = just above / below my body (to feel which height is better)
         const py=st.pos.y + (s===3 ? 0.3 : s===4 ? -0.3 : 0), px=st.pos.x+nx*lo, pz=st.pos.z+nz*lo;
@@ -1790,6 +2182,7 @@ function updateSkim(dt){
 /* ---------------------------------------------------- STEP THE WHOLE FLOCK */
 function stepFlock(dt){
   windT += dt;                             // advances the gust field
+  updateSchools(dt);                       // fish schools drift, get eaten, turn up (fishing, v23)
   updateSkim(dt);                          // advance the shared dip/rise altitude
   computeWakes();
   for(const st of birds) flockControl(st, dt);
@@ -1805,6 +2198,13 @@ function stepBody(st, f, dt){
   const acc=f.netWorld.clone().multiplyScalar(1/P.mass);
   st.vel.addScaledVector(acc, dt);
   st.pos.addScaledVector(st.vel, dt);
+  // Diving, under water, on the water or running to take off, the bird holds its attitude itself (nose
+  // along its path, wings tucked, or level on the water): turn the body toward the attitude it wants.
+  if(st.attQ){
+    st.quat.slerp(st.attQ, 1-Math.exp(-dt/0.07)).normalize(); st.omega.set(0,0,0);
+    if(st.mode==='takeoff' || st.mode==='dive') return;      // the water is handled by takeoffWater / waterEntry
+  }
+  if(st.attQ) return;
   // rotational (body frame Euler)
   const I=derived.I, w=st.omega, T=f.torqueBody;
   const gyro=V3((I.z-I.y)*w.y*w.z,(I.x-I.z)*w.z*w.x,(I.y-I.x)*w.x*w.y);
@@ -1873,6 +2273,18 @@ const SCHEMA=[
    {k:'fatigueSlow',label:'Tired birds slow down',min:0,max:0.6,step:0.01,unit:'',hint:'how much a fully tired bird lowers its preferred pace'},
    {k:'passMargin',label:'Passing impatience',min:0.1,max:3,step:0.05,unit:'m/s',hint:'how much slower than my own pace the bird ahead must fly before I go around it'},
    {k:'individuality',label:'Individual variation',min:0,max:0.3,step:0.01,unit:'',hint:'spread of fitness and preferred pace between birds (applies on restart)'},
+ ]},
+ {title:'Fishing', open:true, items:[
+   {k:'circleAlt',label:'Circling (dive) height',min:5,max:30,step:0.5,unit:'m',hint:'how high a fishing bird circles, and so how high it dives from. The PBS footage: about 12 m (40 ft), hitting the water at about 18 m/s (40 mph)'},
+   {k:'circleR',label:'Circling radius',min:10,max:50,step:1,unit:'m'},
+   {k:'diveAngle',label:'Dive steepness',min:40,max:85,step:1,unit:'°',hint:'how steep the roll-over pulls the dive before the wings sweep back; from there the fall is ballistic'},
+   {k:'catchChance',label:'Catch chance',min:0,max:1,step:0.05,unit:'',hint:'for a dive into the middle of a full school; less toward its edge and as it thins out'},
+   {k:'airSacs',label:'Air-sac buoyancy',min:0,max:3,step:0.1,unit:'× weight',hint:'on hitting the water a pelican takes a sharp breath into the air sacs in its bones and under its skin, and pops back up. 0 = it only floats up slowly'},
+   {k:'footThrust',label:'Takeoff: leg push',min:0,max:1.5,step:0.05,unit:'× weight',hint:'the feet running along the surface during a takeoff'},
+   {k:'waterSuction',label:'Takeoff: water\'s grip',min:0,max:1,step:0.05,unit:'× weight',hint:'how hard the water holds on to the body until the wings carry it clear'},
+   {k:'hungerRate',label:'Appetite',min:0,max:0.03,step:0.001,unit:'/s',hint:'how fast hunger comes back; a bird hungrier than 40% goes fishing when it sees fish, and stops below 10%'},
+   {k:'spotRange',label:'Spotting range',min:20,max:400,step:10,unit:'m',hint:'how far away a bird notices a school, or a bird already fishing one'},
+   {k:'schoolEvery',label:'New school about every',min:10,max:300,step:5,unit:'s'},
  ]},
  {title:'Mass & skeleton', open:true, items:[
    {k:'mass',label:'Total mass',min:0.01,max:12,step:0.01,unit:'kg'},
@@ -2030,17 +2442,21 @@ function buildPresetSection(host){
                  ['vWind','Wind vectors (green=up, red=down)'],['draft','Drafting upwash'],['leadRotate','Fatigue-driven passing (emergent lead changes)'],
                  ['wakeSink','Wakes sink behind each bird'],['skimEnable','Surface skims (ground-effect fishing)'],
                  ['avoidObstacles','Avoid the jetties and hills'],['viewWide','Joiners see the whole flock (not just a cone ahead)'],
-                 ['fingerOfGod','Finger of God (click near the flock to disturb it)']];
+                 ['fingerOfGod','Finger of God (click near the flock to disturb it)'],
+                 ['fishing','Go fishing (hungry birds hunt fish schools)'],['autoSchools','Fish schools turn up on their own'],
+                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!P[k];
     cb.onchange=()=>{P[k]=cb.checked?1:0; if(k==='vFlow'&&flow) flow.visible=cb.checked;
-      if(k==='fingerOfGod') renderer.domElement.style.cursor = cb.checked ? 'crosshair' : '';
+      if(k==='fingerOfGod' || k==='dropSchool') renderer.domElement.style.cursor = (P.fingerOfGod||P.dropSchool) ? 'crosshair' : '';
       if(k==='vTrail'){ for(const st of birds){ if(st.mesh){ st.mesh.trailR.visible=cb.checked; st.mesh.trailL.visible=cb.checked; } } }};
     t.appendChild(cb); t.appendChild(document.createTextNode(lb)); tg.appendChild(t);
     if(k==='fingerOfGod'){ const sp=document.createElement('span'); sp.id='fogCharge'; sp.style.cssText='margin-left:auto;font-variant-numeric:tabular-nums;color:#7fe3d0'; t.appendChild(sp); }
   }
   host.appendChild(tg);
+  const lab=document.createElement('button'); lab.textContent='🎣 Fishing lab: one hungry pelican and a school of fish';
+  lab.style.cssText='margin:8px 0 4px;width:100%'; lab.onclick=fishingLab; host.appendChild(lab);
   host.appendChild(mkCtl({k:'fogStrength',label:'Disturbance strength',min:1,max:20,step:0.5,unit:'m/s',hint:'peak downdraft at the centre of the air pocket a click drops on the flock (Finger of God); it also blows outward about as hard near its rim. Up to '+P.fogBurst+' in a quick burst, then it recharges after '+P.fogCooldown+' s without clicks'}));
   host.appendChild(mkCtl({k:'fogRadius',label:'Disturbance size',min:2,max:20,step:0.5,unit:'m',hint:'radius of the air pocket'}));
 }
@@ -2135,7 +2551,9 @@ let dragging=false, px=0, py=0;
 let downX=0, downY=0;
 renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;px=e.clientX;py=e.clientY;downX=e.clientX;downY=e.clientY;});
 addEventListener('pointerup',e=>{ dragging=false;
-  if(P.fingerOfGod && e.target===renderer.domElement && Math.hypot(e.clientX-downX, e.clientY-downY) < 5) fingerAt(e.clientX, e.clientY); });
+  if(e.target!==renderer.domElement || Math.hypot(e.clientX-downX, e.clientY-downY) >= 5) return;
+  if(P.fingerOfGod && fingerAt(e.clientX, e.clientY)) return;
+  if(P.dropSchool) dropSchoolAt(e.clientX, e.clientY); });
 // cast a ray from the eye through the click; the pocket goes at the point on that ray closest to the
 // bird nearest the click on screen (so a click near the flock lands among the birds). Clicks more than
 // 60 px from every bird miss.
@@ -2242,8 +2660,11 @@ function updateOneBird(st){
   m.root.quaternion.copy(st.quat);
   if(st.cmdRoll) m.root.rotateX(-st.cmdRoll);   // cosmetic lean into a lateral correction (physics stays wings-level)
   // flap at shoulder, fold at elbow, twist each segment -- matching the physics
-  const be=st.beta+P.dihedral*DEG;
-  m.wingR.rotation.x=-be; m.wingL.rotation.x=be;
+  const be=st.beta+P.dihedral*DEG+(st.wRaise||0), sig=(st.tuck||0)*P.tuckSweep*DEG;
+  m.wingR.rotation.set(-be, -sig, 0); m.wingL.rotation.set(be, sig, 0);   // flap/raise, then sweep back (tuck)
+  if(m.head) m.head.rotation.z = st.headPitch||0;
+  if(m.feet){ const wet = st.mode==='swim' || st.mode==='takeoff' || st.mode==='under';
+    m.feet.forEach((lg,i)=>{ lg.visible=wet; if(wet) lg.rotation.z = st.mode==='takeoff' ? 1.1*Math.sin(st.t*16+i*Math.PI) : 0.35*Math.sin(st.t*3+i*Math.PI); }); }
   const gamma=(st.fold||0)*P.maxFoldDeg*DEG;
   m.wingRelbow.rotation.set(0, -gamma, 0);   // in-plane backsweep about the wing normal (like a real elbow)
   m.wingLelbow.rotation.set(0, +gamma, 0);   // left mirror
@@ -2317,7 +2738,7 @@ function buildShadows(){
     const mat=new THREE.MeshBasicMaterial({color:0x5b6a73, transparent:true, opacity:0.3, depthWrite:false});
     st._shadowMat=mat; st._shadowPairs=[];
     st.mesh.root.traverse(o=>{
-      if(o.isMesh && o.geometry && o.geometry.type!=='BoxGeometry'){   // skip the tiny primary-feather boxes
+      if(o.isMesh && o.geometry && o.geometry.type!=='BoxGeometry' && !o.userData.noShadow){   // skip the tiny primary-feather boxes (and the feet)
         const sh=new THREE.Mesh(o.geometry, mat);
         sh.matrixAutoUpdate=false; sh.renderOrder=-1; sh.frustumCulled=false;
         shadowGroup.add(sh); st._shadowPairs.push({src:o, sh});
@@ -2395,7 +2816,9 @@ function updateHUD(){
   setStat('bird', '#'+focus+' '+role);
   // flap / coast state badge
   const mb=document.getElementById('modeBadge');
-  if(P.flapStrategy!=='intermittent'){ mb.textContent='FLAP'; mb.className='badge flap'; }
+  const wm={dive:'DIVE', under:'UNDER', swim:'SWIM', takeoff:'TAKEOFF'}[st.mode];
+  if(wm){ mb.textContent=wm; mb.className='badge coast'; }
+  else if(P.flapStrategy!=='intermittent'){ mb.textContent='FLAP'; mb.className='badge flap'; }
   else if(telemetry.coasting){ mb.textContent='COAST'; mb.className='badge coast'; }
   else { mb.textContent='FLAP'; mb.className='badge flap'; }
   const sk=document.getElementById('skimTag');
@@ -2416,7 +2839,9 @@ function updateHUD(){
   setBar('weight',-W,W*2);
   const badge=document.getElementById('stallBadge');
   const stallS=ema('stall',telemetry.stalled||0,0.05);
-  if(stallS>10){ badge.textContent='STALL'; badge.className='badge stall'; }
+  if(st.mode==='under' || st.mode==='swim'){ badge.textContent='IN WATER'; badge.className='badge ok'; }
+  else if(st.mode==='dive' && st.tuck>0.4){ badge.textContent='WINGS TUCKED'; badge.className='badge ok'; }
+  else if(stallS>10){ badge.textContent='STALL'; badge.className='badge stall'; }
   else { badge.textContent='OK'; badge.className='badge ok'; }
   // hint
   const hint=document.getElementById('hudHint');
@@ -2452,6 +2877,155 @@ function updateHUD(){
 
 // pocket visuals: a ring spreading on the water under it and a fading shell where it struck
 const pocketFx=[];
+/* ---------- fishing visuals (v23): schools, splashes, rings, the "I've seen fish" sight line, status tag */
+// a school: dark water over the bait ball, silver fish milling (flashing, now and then jumping), little
+// boils at the surface, a ring around it and a label with how many fish are left and who's fishing it
+const _schoolTex=(()=>{ const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+  const gr=g.createRadialGradient(64,64,6,64,64,64); gr.addColorStop(0,'rgba(6,28,34,0.9)'); gr.addColorStop(0.6,'rgba(8,36,44,0.55)'); gr.addColorStop(1,'rgba(8,36,44,0)');
+  g.fillStyle=gr; g.fillRect(0,0,128,128); return new THREE.CanvasTexture(c); })();
+const _ringGeo=new THREE.RingGeometry(0.9,1,40);
+const _dotTex=(()=>{ const c=document.createElement('canvas'); c.width=c.height=32; const g=c.getContext('2d');
+  const gr=g.createRadialGradient(16,16,0,16,16,16); gr.addColorStop(0,'rgba(255,255,255,1)'); gr.addColorStop(0.55,'rgba(255,255,255,0.9)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=gr; g.fillRect(0,0,32,32); return new THREE.CanvasTexture(c); })();   // round droplets / fish glints
+function textSprite(){
+  const c=document.createElement('canvas'); c.width=512; c.height=96; const g=c.getContext('2d');
+  const tex=new THREE.CanvasTexture(c);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthWrite:false, sizeAttenuation:false}));
+  sp.scale.set(0.26,0.049,1);                              // constant size on screen
+  sp.userData.set=(t)=>{ if(sp.userData.t===t) return; sp.userData.t=t; g.clearRect(0,0,512,96);
+    g.font='600 40px system-ui, sans-serif'; const w=Math.min(500, g.measureText(t).width+40);
+    g.fillStyle='rgba(11,15,20,0.72)'; g.beginPath(); g.roundRect((512-w)/2,8,w,80,40); g.fill();
+    g.fillStyle='#e9f6f2'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(t,256,50); tex.needsUpdate=true; };
+  return sp;
+}
+function buildSchoolFx(s){
+  const g=new THREE.Group(); g.position.set(s.x,0,s.z); scene.add(g);
+  const patch=new THREE.Mesh(new THREE.CircleGeometry(1,40), new THREE.MeshBasicMaterial({map:_schoolTex, transparent:true, depthWrite:false}));
+  patch.rotation.x=-Math.PI/2; patch.position.y=0.03; patch.scale.setScalar(s.r*1.7); g.add(patch);
+  const N=s.fish0, pos=new Float32Array(N*3), fish=[];
+  for(let i=0;i<N;i++) fish.push({a:Math.random()*6.283, rr:Math.sqrt(Math.random())*s.r*0.8, w:(0.5+0.7*Math.random())*(Math.random()<0.85?1:-1), y:0, vy:0, ph:Math.random()*6.283});
+  const geo=new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const pts=new THREE.Points(geo, new THREE.PointsMaterial({color:0xe8f2f7, size:0.32, map:_dotTex, alphaTest:0.05, transparent:true, opacity:0.9, depthWrite:false}));
+  pts.frustumCulled=false; g.add(pts);
+  const ring=new THREE.Mesh(_ringGeo, new THREE.MeshBasicMaterial({color:0x7fe3d0, transparent:true, opacity:0.45, side:THREE.DoubleSide, depthWrite:false}));
+  ring.rotation.x=-Math.PI/2; ring.position.y=0.05; ring.scale.setScalar(s.r*1.25); g.add(ring);
+  const label=textSprite(); label.position.y=4.5; g.add(label);
+  return {g, patch, pts, fish, ring, label, boilT:0};
+}
+function disposeSchoolFx(s){ const f=s.fx; if(!f) return; scene.remove(f.g);
+  f.g.traverse(o=>{ if(o.geometry && o.geometry!==_ringGeo) o.geometry.dispose(); if(o.material){ if(o.material.map && o.material.map!==_schoolTex) o.material.map.dispose(); o.material.dispose(); } });
+  s.fx=null; }
+function updateSchoolFx(dt){
+  const now=windT;
+  for(const s of schools){ const f=s.fx; if(!f) continue;
+    f.g.position.set(s.x,0,s.z);
+    const fade=s.gone ? Math.max(0, 1-s.fade/4) : 1, live=s.fish/s.fish0;
+    f.patch.material.opacity=fade*(0.35+0.65*live);
+    const p=f.pts.geometry.attributes.position.array, spread=1+0.9*s.scatter;
+    for(let i=0;i<f.fish.length;i++){ const q=f.fish[i];
+      if(i>=s.fish){ p[3*i+1]=-50; continue; }
+      q.a += q.w*(1+2*s.scatter)*dt;
+      if(q.y>0 || q.vy>0){ q.vy-=9.8*dt; q.y=Math.max(0, q.y+q.vy*dt); if(q.y===0) q.vy=0; }
+      p[3*i]=Math.cos(q.a)*q.rr*spread; p[3*i+2]=Math.sin(q.a)*q.rr*spread; p[3*i+1]=0.06+q.y;
+    }
+    if(s.fish>0 && Math.random()<dt*0.9){ const q=f.fish[Math.floor(Math.random()*s.fish)]; if(q && q.y===0) q.vy=2+1.5*Math.random(); }   // a jumper
+    f.pts.geometry.attributes.position.needsUpdate=true;
+    f.pts.material.opacity=fade*(0.55+0.4*Math.sin(now*9));          // flashing as they turn
+    f.boilT-=dt; if(s.fish>0 && f.boilT<=0){ f.boilT=0.25+0.4*Math.random()/Math.max(live,0.2);
+      const a=Math.random()*6.283, r=Math.sqrt(Math.random())*s.r*0.7*spread; ringAt(s.x+Math.cos(a)*r, s.z+Math.sin(a)*r, 0.15, 0.9, 0.8, 0.5); }
+    const busy=s.fishers>0;
+    f.ring.material.color.setHex(busy?0xffe08a:0x7fe3d0);
+    f.ring.material.opacity=fade*(busy ? 0.45+0.25*Math.sin(now*4) : 0.35);
+    f.ring.scale.setScalar(s.r*1.25*spread);
+    f.label.material.opacity=fade;
+    f.label.userData.set(s.fish>0 ? ('🐟 '+s.fish+' fish'+(busy ? ' · '+s.fishers+' pelican'+(s.fishers>1?'s':'')+' fishing' : '')) : 'all eaten');
+  }
+}
+// splashes: one shared pool of droplets, plus rings spreading on the water
+const SPL_N=2000, _splPos=new Float32Array(SPL_N*3).fill(-50), _splVel=new Float32Array(SPL_N*3), _splLife=new Float32Array(SPL_N);
+let _splI=0;
+const splPts=(()=>{ const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(_splPos,3));
+  const p=new THREE.Points(g, new THREE.PointsMaterial({color:0xffffff, size:0.16, map:_dotTex, alphaTest:0.05, transparent:true, opacity:0.85, depthWrite:false}));
+  p.frustumCulled=false; scene.add(p); return p; })();
+function splash(x, z, speed, n){
+  n = n || Math.round(60+12*speed);
+  const up=0.35*speed, out=0.12*speed+0.6;
+  for(let k=0;k<n;k++){ const i=_splI++%SPL_N, a=Math.random()*6.283, r=Math.random();
+    _splPos[3*i]=x+Math.cos(a)*0.2*r; _splPos[3*i+1]=0.05; _splPos[3*i+2]=z+Math.sin(a)*0.2*r;
+    _splVel[3*i]=Math.cos(a)*out*(0.3+r); _splVel[3*i+1]=up*(0.3+0.9*Math.random()); _splVel[3*i+2]=Math.sin(a)*out*(0.3+r);
+    _splLife[i]=1; }
+  if(speed>6){ ringAt(x, z, 0.3, 2.5+0.12*speed, 1.6, 0.8); ringAt(x, z, 0.2, 1.2+0.06*speed, 1.0, 0.6); }
+}
+function updateSplash(dt){
+  let any=false;
+  for(let i=0;i<SPL_N;i++){ if(_splLife[i]<=0) continue; any=true;
+    _splVel[3*i+1]-=9.8*dt;
+    _splPos[3*i]+=_splVel[3*i]*dt; _splPos[3*i+1]+=_splVel[3*i+1]*dt; _splPos[3*i+2]+=_splVel[3*i+2]*dt;
+    _splLife[i]-=dt/1.8;
+    if(_splPos[3*i+1]<0 || _splLife[i]<=0){ _splLife[i]=0; _splPos[3*i+1]=-50; } }
+  if(any || splPts.userData.dirty){ splPts.geometry.attributes.position.needsUpdate=true; splPts.userData.dirty=any; }
+}
+const ringFx=[];
+function ringAt(x, z, r0, r1, dur, op){
+  const m=new THREE.Mesh(_ringGeo, new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:op, side:THREE.DoubleSide, depthWrite:false}));
+  m.rotation.x=-Math.PI/2; m.position.set(x,0.05,z); m.scale.setScalar(r0); scene.add(m);
+  ringFx.push({m, t:0, dur, r0, r1, op});
+}
+function updateRings(dt){
+  for(let i=ringFx.length-1;i>=0;i--){ const r=ringFx[i]; r.t+=dt; const u=r.t/r.dur;
+    if(u>=1){ scene.remove(r.m); r.m.material.dispose(); ringFx.splice(i,1); continue; }
+    r.m.scale.setScalar(r.r0+(r.r1-r.r0)*Math.sqrt(u)); r.m.material.opacity=r.op*(1-u); }
+}
+// the moment a bird decides to go fishing: a line from it to the school it spotted, fading out
+const sightFx=[];
+function showSight(st, s){
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0,0,0,0],3));
+  const ln=new THREE.Line(g, new THREE.LineBasicMaterial({color:0xffe08a, transparent:true, opacity:0.9, depthWrite:false}));
+  ln.frustumCulled=false; scene.add(ln); sightFx.push({ln, st, s, t:0});
+}
+function updateSights(dt){
+  for(let i=sightFx.length-1;i>=0;i--){ const f=sightFx[i]; f.t+=dt;
+    if(f.t>4 || !birds.includes(f.st)){ scene.remove(f.ln); f.ln.geometry.dispose(); f.ln.material.dispose(); sightFx.splice(i,1); continue; }
+    const a=f.ln.geometry.attributes.position.array; a[0]=f.st.pos.x; a[1]=f.st.pos.y; a[2]=f.st.pos.z; a[3]=f.s.x; a[4]=0.1; a[5]=f.s.z;
+    f.ln.geometry.attributes.position.needsUpdate=true; f.ln.material.opacity=0.9*(1-f.t/4); }
+}
+function fishStatus(st){
+  if(!st) return '';
+  const h=Math.round(100*st.hunger), L=st.lastDive;
+  const last = L && L.vEntry ? ' · last dive: from '+L.h0.toFixed(0)+' m, hit the water at '+L.vEntry.toFixed(1)+' m/s ('+L.mph.toFixed(0)+' mph), '+L.angle.toFixed(0)+'°'+(L.caught?' 🐟':' (missed)') : '';
+  let what;
+  switch(st.mode){
+    case 'circle': what = st.phase2==='approach' ? 'lining up a dive' : 'circling over the fish, '+st.pos.y.toFixed(0)+' m up'; break;
+    case 'dive': what = 'DIVING '+st.vel.length().toFixed(1)+' m/s'+(st.phase2==='roll'?' (rolling over)':st.phase2==='arrow'?' (wings folded flat)':' (wings swept back)'); break;
+    case 'under': what = 'under water, air sacs filling'; break;
+    case 'swim': what = st.swimPhase==='drain' ? 'on the water, draining its pouch' : st.swimPhase==='swallow' ? 'swallowing 🐟' : 'bobbing on the water'; break;
+    case 'takeoff': what = 'taking off: flapping hard, feet running on the water'; break;
+    default: what = st.hunger>P.hungerGo ? (P.fishing ? 'hungry, looking for fish' : 'hungry') : (st.climbing ? 'full, climbing back to the flock' : 'flying with the flock');
+  }
+  return '🎣 Bird #'+st.id+': '+what+' · hunger '+h+'% · caught '+(st.caught||0)+last;
+}
+const fishTagEl=document.getElementById('fishTag');
+function updateFishFx(dt){
+  updateSchoolFx(dt); updateSplash(dt); updateRings(dt); updateSights(dt);
+  const show = P.fishing || (state && state.mode && state.mode!=='fly');
+  fishTagEl.style.display = show ? 'block' : 'none';
+  if(show) fishTagEl.textContent = fishStatus(state);
+}
+// click the water: put a school there (cast the ray to the sea surface)
+function dropSchoolAt(cx, cy){
+  const r=renderer.domElement.getBoundingClientRect(); camera.updateMatrixWorld();
+  _ndc.set((cx-r.left)/r.width*2-1, -((cy-r.top)/r.height*2-1)); _ray.setFromCamera(_ndc, camera);
+  const o=_ray.ray.origin, d=_ray.ray.direction; if(d.y>=-1e-3) return null;
+  const t=-o.y/d.y; return addSchool(o.x+d.x*t, o.z+d.z*t);
+}
+// one pelican, hungry, with a school ahead: the dive lab
+function fishingLab(){
+  P.nBirds=1; P.fishing=1; P.autoSchools=1; P.hungerStart=1; P.skimEnable=0;
+  buildUI(); resetState();
+  const b=birds[0]; addSchool(b.pos.x+90, coastFollow(b.pos.x+90)-6);
+  cam.dist=Math.max(cam.dist, 26);
+}
+
 function showPocket(k){
   const ring=new THREE.Mesh(new THREE.RingGeometry(0.85,1,48), new THREE.MeshBasicMaterial({color:0xffe9a8, transparent:true, opacity:0.8, side:THREE.DoubleSide, depthWrite:false}));
   ring.rotation.x=-Math.PI/2; ring.position.set(k.x,0.06,k.z); scene.add(ring);
@@ -2475,12 +3049,13 @@ function updatePocketFx(){
 function frame(now){
   requestAnimationFrame(frame);
   let dt=(now-lastT)/1000; lastT=now; dt=clamp(dt,0,0.05)*P.timeScale;
+  if(P.diveSlowmo && state && (state.mode==='dive' || state.mode==='under')) dt*=0.25;   // slow motion for the dive
   if(playing && dt>0){
     // fixed substeps for stability
     const sub=1/480; let acc=dt;
     let guard=0;
     while(acc>1e-6 && guard++<80){ const h=Math.min(sub,acc); integrate(h); acc-=h; }
-    updateBirdMesh(dt); updateFlow(dt); updateArrows(); updateWindField(); updatePocketFx();
+    updateBirdMesh(dt); updateFlow(dt); updateArrows(); updateWindField(); updatePocketFx(); updateFishFx(dt);
     // strips visualization opacity
     // charts
     chartData.push({lift:telemetry.lift||0, thrust:telemetry.thrust||0, alt:state.pos.y});
@@ -2531,9 +3106,11 @@ requestAnimationFrame(frame);
 // expose for headless verification
 window.__sim={P,
   get state(){return state;}, get telemetry(){return telemetry;},
-  get birds(){return birds;}, get order(){return order;}, get focus(){return focus;}, set focus(i){setFocus(i);},
+  get birds(){return birds;}, get order(){return order;},
+  renderFrame(dt){ updateBirdMesh(dt||1/60); updateFishFx(dt||1/60); updatePocketFx(); updateWorld(); updateCamera(); renderer.render(scene,camera); }, get focus(){return focus;}, set focus(i){setFocus(i);},
   get skimState(){return skimState;}, get flockBaseAlt(){return flockBaseAlt;},
   forceSkim(){ skimCountdown=0; },   // trigger a dip now (for testing)
   derived, integrate, stepFlock, stepBird, computeWakes, flockControl, upwashAt, WK,
-  resetState, resetFlock, seedRandom, disturb, fingerAt, fogStatus, camera, get pockets(){return pockets;}, computeForces, cam, buildBird};
+  resetState, resetFlock, seedRandom, disturb, fingerAt, fogStatus, camera, get pockets(){return pockets;}, computeForces, cam, buildBird,
+  addSchool, get schools(){return schools;}, fishLog, fishStatus, fishingLab, dropSchoolAt};
 </script>

@@ -193,6 +193,62 @@ Next with this tool: measure *what shape* the flock reforms into after a big bur
   - With lead changes, the flock tears itself apart: the passers pay the price too.
 - So in the sim, a single line means birds that don't plan to stay long, or can't see the rest of the flock.
 
+## Fishing (v23): one bird, the dive itself
+
+Pelicans are plunge-divers. v23 adds the whole feeding cycle for each bird, tuned with one pelican first: fly, see fish, circle, dive, in the water, swim, take off, then circle again or rejoin the flock. Turn on *Go fishing*, or press *Fishing lab* for one hungry pelican and a school 90 m ahead.
+
+**How it's built**
+- **Tucked wings stop lifting for real.**
+  - The shoulder sweeps the wing back (up to 80°) and the feathers overlap (up to 75% less area).
+  - Each strip then only lifts on the flow *across* it (sweep theory); the flow along the span adds only skin friction.
+  - Fully tucked, the span lies along the body, so the lift is gone and the fall is ballistic. Nothing is scripted.
+- **The dive is three phases.**
+  - Roll left past vertical and pull the nose down, with the primaries half spread to shed speed.
+  - Wings swept about 50° and raised into a V over the back, steering a little toward the fish (this is in the stills).
+  - Below 3 m, fold flat and twist left (the arrow).
+  - Attitude is held kinematically along the flight path. The forces stay physical.
+- **Aiming.** A bird turns in from its orbit and lines up so that the predicted entry point (ahead and to the left, because of the left roll) falls on the school. After each dive it updates its estimate from where it actually landed.
+- **In the water.**
+  - Water drag on a streamlined body brings it to a stop about 1 m down.
+  - The breath it takes on impact fills the air sacs over a quarter second (*Air-sac buoyancy*, 1.6× weight), so it pops up in about 1 s.
+  - Floating, it paddles slowly into the wind, drains its pouch for 6 s and swallows.
+- **Takeoff.**
+  - The beat is raised 18° and flaps at full amplitude.
+  - The feet push at 0.5× weight, fading out by 9 m/s.
+  - Buoyancy and hull drag fall as the body rises, and the water's grip (0.35× weight) lets go only once the body is nearly clear.
+  - The body skips off the surface with each wingbeat until it lifts off.
+- **Circling** uses the same capped steering force as sideways station-keeping in the flock. The bank shows on the body. The yaw damper now damps relative to the turn being flown; without that it held the nose 45° outside the circle.
+- **Regression.** With fishing off, seeded runs replay v22 bit for bit. Two things needed care:
+  - Strip arithmetic is kept in the same order.
+  - three.js draws a random id for every new object, so the feet are built from the unseeded generator and get no shadows.
+
+**Results** (`specs/fishing.json`, seed 1)
+
+One pelican, 300 s:
+- 9 dives and 3 fish. Full at 240 s, it climbed back to cruise height.
+- Dives started from 12.5–14.7 m and hit the water at 14.9–17.2 m/s (33–38 mph, median 37). The median entry angle was 67° (60–79°).
+- Median miss was 2.9 m (the school's radius is 6 m).
+- It went 0.95–1.03 m deep and was under for 0.92–0.99 s.
+- Takeoff runs took 2.6–4.3 s over 14–29 m, lifting off at 9.2–11.1 m/s.
+
+20 birds, 400 s:
+- 120 dives and 62 catches (52%).
+- Median entry 16.1 m/s (36 mph) at 69° (59–81°), from a median 13.0 m, landing 1.3 m from where it aimed.
+- Median takeoff run 3.1 s (2.1–4.3 s, 11–30 m).
+- Every bird caught 2–4 fish; no crashes or NaNs.
+
+Against the video (40 mph from about 40 ft): our entry is about 8% slower. The roll-over airbrake that makes the dive steep costs some speed. A slightly higher circle or a weaker brake would close the gap.
+
+**Next**
+- **v24, the flock feeds:**
+  - Divers avoid each other (nothing stops two birds diving at the same spot yet).
+  - Birds that see a dive go to it (only the spotting cue so far).
+  - Schools that sink or scatter when hit hard.
+  - Measures: dive rate, success rate, time to full, near misses.
+- **v25, leaving and re-forming:**
+  - A quorum rule for when the flock leaves.
+  - What shape it re-forms into. Full birds rejoin one at a time, which is exactly the v19–v22 join-one-at-a-time question.
+
 ## Open issues carried over from v18
 
 - **Branching:** with quirks, a second line branches off an arm more often: 50–74% of the time at 12 birds, against 34–46% in v17. Try a lower default `quirk`, or make the spot-score noise smaller than the side preference.
@@ -207,5 +263,6 @@ Next with this tool: measure *what shape* the flock reforms into after a big bur
 - Metrics: `tools/flock-metrics/run.sh index.html tools/flock-metrics/specs/v18.json`. It needs Docker.
   - Files are staged through a temp dir, because Docker can't read `~/Documents`.
   - About 5 s per 300 simulated seconds.
-- Specs live in `tools/flock-metrics/specs/`: `default.json` (20 birds), `strings.json` (12 birds, skims) and `v18.json` (crosswind, jetties, updraft, quirk 0).
+- Fishing runs: a spec with `"fish":{"dx":90,"z":-6}` puts a school 90 m ahead of bird 0 and reports every dive (height, entry speed and angle, miss, catch, depth, time under, takeoff run) plus mode changes; `"trace":true` adds a 0.1 s trace while birds dive, swim and take off.
+- Specs live in `tools/flock-metrics/specs/`: `default.json` (20 birds), `strings.json` (12 birds, skims) and `v18.json` (crosswind, jetties, updraft, quirk 0) and `fishing.json` (one pelican fishing; a flock of 20 fishing).
 - Results can be compared by eye from the JSON lines. In past sessions a small script printed two runs side by side.

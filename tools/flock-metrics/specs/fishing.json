@@ -1,0 +1,2 @@
+[{"name":"one pelican fishing, seed 1","secs":300,"seed":1,"P":{"nBirds":1,"fishing":1,"autoSchools":1,"hungerStart":1,"skimEnable":0},"fish":{"dx":90,"z":-6,"at":0}},
+ {"name":"flock of 20 fishing, seed 1","secs":400,"seed":1,"P":{"fishing":1,"autoSchools":1,"hungerStart":0.8},"fish":{"dx":120,"z":-6,"at":20}}]
