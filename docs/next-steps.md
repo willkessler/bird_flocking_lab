@@ -153,6 +153,46 @@ With skims on and a strength-20 burst every 20 s for 5 minutes, no bird touched 
 
 Next with this tool: measure *what shape* the flock reforms into after a big burst. Does a scattered flock rebuild a lopsided V, an echelon, or a balanced V, and does it depend on which birds were scattered?
 
+## Wide view and an energy price for catching up (after v21)
+
+**The question.** Why does the sim almost never make a single line? Does a joining bird weigh "catch up to the short arm" against "settle at the back of the long one"?
+
+**How a bird actually chose before this change.**
+- It never compared those two options. It only considered birds inside a narrow cone ahead: about 27° each side, up to 30 m.
+- A bird behind the tail of a lopsided V couldn't see the short arm's tip or the leader's empty side, so it joined whatever was in front of it.
+- Distance cost a flat 0.03 m/s per metre.
+
+**Two new options, both off by default:**
+- `viewWide`: the bird sees about 70° each side and up to 60 m, and up to 40 candidate birds.
+- `catchupCost`: distance is priced from energy instead of the flat rate.
+  - The extra energy to gain d metres on the flock is about 3·Psus/v·d. That's about 15 J/m, and dropping back saves the same amount.
+  - On top of that, the bird loses its current upwash for the time it takes to get there, at about 1.5 m/s relative to the flock.
+  - The total is spread over `holdTime` (20 s) and divided by m·g. At 1× this comes out about the same size as the old flat rate.
+
+**Results.** Trickle start, 3 seeds, 480 s.
+
+| Lead rotation | View | Catch-up | Result |
+|---|---|---|---|
+| on | narrow | flat | V's; long-arm share 0.54–0.67 |
+| on | wide | flat | V's, more balanced (0.56–0.59) |
+| on | narrow | energy 1× | V's (0.59–0.67), one mostly mixed run (0.78) |
+| on | wide | energy 1× | V's and filled wedges (0.58–0.60); draft power 47–52 W against 42–47 W |
+| on, cluster start | wide | energy 1× | V's 53–73%, filled 26–45%; closest pair 0.28 m |
+| off | narrow | flat | (v20) echelon in 5 of 6 runs |
+| off | wide | flat | V's in 2 of 3 runs |
+| off | wide | energy 1× | V's in 3 of 3 runs, 0.53–0.58 |
+| off | wide | energy 3× | **echelon in 3 of 3 runs**, flock intact |
+| on | wide | energy 3× | echelons 24–79% of the time, long-arm share 0.77–0.92, but the flock splits 24–100% of the time |
+
+**What this shows.**
+- The near-total absence of single lines comes from the **physics of upwash**. The tip of the short arm, or the leader's empty side, really is better air than the tail of the long arm.
+- When a bird can see those spots and catching up costs about what the energy estimate says, it goes there. The V's get more balanced, not less.
+- In the v20 runs with rotation off, the echelons came mostly from the narrow view.
+- Echelons win only when catching up costs about 3× the estimate, roughly a bird expecting to hold its spot for only about 7 s.
+  - Without lead changes, that gives a clean echelon every time.
+  - With lead changes, the flock tears itself apart: the passers pay the price too.
+- So in the sim, a single line means birds that don't plan to stay long, or can't see the rest of the flock.
+
 ## Open issues carried over from v18
 
 - **Branching:** with quirks, a second line branches off an arm more often: 50–74% of the time at 12 birds, against 34–46% in v17. Try a lower default `quirk`, or make the spot-score noise smaller than the side preference.

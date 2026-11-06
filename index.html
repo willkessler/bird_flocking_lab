@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v21</title>
+<title>Bird Flight Lab v22</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -89,7 +89,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v21</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v22</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -192,6 +192,9 @@ const P = {
   lookAhead:0.5,               // how much a follower paces off the next birds up its line, not just the one it follows (0 = only that one)
   personalSpace:1.0,           // m of clear air a bird keeps between its wingtips/body and any other bird's (Boids separation)
   reachCost:0,                 // extra cost (m/s of upwash per 10 m) of a spot I must overtake to reach, in clean air
+  viewWide:0,                  // 1 = a bird looking for a spot sees the whole flock (out to ~70 deg each side, 60 m ahead), not a narrow cone
+  catchupCost:0,               // 0 = flat 0.03 m/s per m to a spot; >0 = priced from energy: extra power to fly faster + drafting lost on the way (x this)
+  holdTime:20,                 // s: how long a bird expects to keep a spot -- the energy to reach it is spread over this
   joinGap:12,                  // 'trickle' start: metres between birds that join one at a time
   cohesion:0.5,
   chaseRange:150,              // m: how far ahead a straggler can still see (and chase) the flock
@@ -1278,7 +1281,18 @@ const _sL=V3(), _sR=V3();
 // together. reachCost per 4 birds passed (about 10 m of overtaking at the default spacing), capped at 4.
 function reachCost(dx, dz, b, st){
   const hx=b._hx, hz=b._hz, sA=dx*hx+dz*hz, sC=-dx*hz+dz*hx;
-  let base = 0.03*Math.hypot(dx,dz);
+  let base;
+  if(P.catchupCost>0){
+    // Energy, priced honestly. Gaining d m on the flock means flying faster for a while: near cruise
+    // P ~ v^3, so the extra energy is ~ (dP/dv)*d = 3*Psus/v per metre gained, whatever the speed
+    // (dropping back saves the same). And while I'm on the move (~1.5 m/s relative, forward or across)
+    // I lose the upwash I have now. Spread over the time I expect to hold the spot and divide by m*g
+    // to compare it with upwash (m/s): w_eq = E / (m g H).
+    const sA0=dx*b._hx+dz*b._hz, sC0=-dx*b._hz+dz*b._hx, mg=P.mass*G;
+    const t=(Math.abs(sA0)+Math.abs(sC0))/1.5, wNow=Math.max(0, st.wakeWind ? st.wakeWind.y : 0);
+    const E=3*P.sustainPower/P.paceSpeed*sA0 + mg*wNow*t;
+    base = P.catchupCost*E/(mg*Math.max(1,P.holdTime));
+  } else base = 0.03*Math.hypot(dx,dz);
   if(!(P.reachCost>0) || sA<1) return base;
   const cLo=Math.min(0,sC)-1.5, cHi=Math.max(0,sC)+1.5;
   let n=0;
@@ -1321,8 +1335,9 @@ function flockControl(st, dt){
   // spots are in downwash -- I also consider spots behind settled birds beside or behind me (birds riding
   // good air, i.e. on an arm) and ease back down the formation to the end of an arm. Only a bird with
   // nobody ahead of it (the leader) doesn't look for a spot.
-  const ahead=(a,c,dy)=> a>0.6 && a<P.wakeRange && Math.abs(c) < 0.5*a + 3*sp && Math.abs(dy)<6;
-  const near =(a,c,dy)=> Math.abs(a)<P.wakeRange && Math.abs(c) < 0.5*Math.abs(a) + 3*sp + 6 && Math.abs(dy)<6;
+  const vw=P.viewWide?1:0, vRange=P.wakeRange*(1+vw), vSlope=vw?3:0.5;   // wide view: ~70 deg each side, 2x as far
+  const ahead=(a,c,dy)=> a>0.6 && a<vRange && Math.abs(c) < vSlope*a + 3*sp && Math.abs(dy)<6;
+  const near =(a,c,dy)=> Math.abs(a)<vRange && Math.abs(c) < vSlope*Math.abs(a) + 3*sp + 6 && Math.abs(dy)<6;
   let tgt = st.target!=null ? birds[st.target] : null;
   if(tgt && !near(...rel(tgt))){ tgt=null; st.target=null; }
   st.lookT -= dt;
@@ -1347,7 +1362,7 @@ function flockControl(st, dt){
     let best=null, bestSide=0, bs=-Infinity;
     for(const pass of [true,false]){                         // spots ahead first; behind only if none is decent
       if(!pass && bs > 0.3) break;
-    for(const [,b,isAhead] of cands.slice(0,12)){
+    for(const [,b,isAhead] of cands.slice(0,vw?40:12)){
       if(isAhead!==pass) continue;
       // Same side: which side of the bird IT follows is b on? Given two equally good spots, I take the
       // one on that same side -- so a line keeps leaning the way it already leans.
@@ -1838,6 +1853,7 @@ const SCHEMA=[
    {k:'lineUp',label:'Same side as the bird ahead',min:0,max:0.6,step:0.05,unit:'m/s',hint:'if the bird ahead of me sits to the left of the bird it follows, I lean toward its left wingtip too (and likewise right) -- a tie-breaker worth this many m/s of upwash, so better air still wins. 0 = off'},
    {k:'lookAhead',label:'Look up the line',min:0,max:1,step:0.05,unit:'',hint:'how much a follower paces itself off the next one or two birds up its line (their speed, and whether it is the right number of gaps behind them) rather than only the bird it follows. 0 = only the bird directly ahead: in a long line every surge grows as it passes back, and the tail birds wear themselves out chasing it'},
    {k:'reachCost',label:'Cost of overtaking to a spot',min:0,max:1,step:0.05,unit:'m/s per 4 birds',hint:'a spot I would have to overtake other birds to reach costs this much upwash per 4 birds passed (clean air, extra speed, alongside them), up to 4. Closing a gap with nobody in between is free. 0 = distance hardly matters, so a late bird crosses to the far arm; ~0.2 = it takes the nearest arm end, and V\'s grow lopsided like real ones; 0.5+ = mostly echelons'},
+   {k:'catchupCost',label:'Energy cost of catching up',min:0,max:3,step:0.1,unit:'×',hint:'0 = distance to a spot costs a flat 0.03 m/s per metre. Above 0 = priced from energy: the extra power to fly faster than the flock until I get there (dropping back saves it), plus the drafting I lose on the way, spread over the time I expect to hold the spot (holdTime, 20 s). 1 = that estimate as is'},
    {k:'personalSpace',label:'Personal space',min:0,max:2.5,step:0.05,unit:'m',hint:'the clear air a bird keeps between itself and any other bird. A bird that sees it is about to cut across another gives way: the one behind holds back, slides off and steps up or down. 0 = only the old side-by-side overlap check'},
    {k:'cohesion',label:'Stay with the flock',min:0,max:1.5,step:0.05,unit:'',hint:'a bird with nobody close ahead that can still see birds further ahead speeds up and steers toward them; a bird leading with a big hole behind it eases off so the stragglers can catch up. 0 = a split flock stays split'},
    {k:'quirk',label:'Individual quirks',min:0,max:1.5,step:0.05,unit:'',hint:'how much birds differ in their choices: each has its own preferred spacing, how far out on the wingtip it sits, a favourite side and height, and it sometimes picks a slightly worse spot. 0 = identical birds and a mechanically perfect V'},
@@ -2013,7 +2029,7 @@ function buildPresetSection(host){
   const toggles=[['vForces','Force vectors'],['vFlow','Airflow'],['vTrail','Wingtip wakes'],
                  ['vWind','Wind vectors (green=up, red=down)'],['draft','Drafting upwash'],['leadRotate','Fatigue-driven passing (emergent lead changes)'],
                  ['wakeSink','Wakes sink behind each bird'],['skimEnable','Surface skims (ground-effect fishing)'],
-                 ['avoidObstacles','Avoid the jetties and hills'],
+                 ['avoidObstacles','Avoid the jetties and hills'],['viewWide','Joiners see the whole flock (not just a cone ahead)'],
                  ['fingerOfGod','Finger of God (click near the flock to disturb it)']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
