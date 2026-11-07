@@ -369,6 +369,15 @@ const WATER_GLSL=`
     h += 0.34*shoal(ds)*pk(surfPh(p, ds), 3.0);                          // swell steepening as it nears the beach
     return h - 0.23;                                                     // mean level ~ 0
   }`;
+// the same wave height in JS, so birds sitting on the water ride the swell you see (looks only)
+function waveHJS(x, z){
+  const t=waterMat.uniforms.uTime.value, pk=(ph,k)=>Math.exp(k*(Math.sin(ph)-1));
+  let h = 0.30*pk(x*0.19+z*0.03+t*1.05,1.6) + 0.24*pk(z*0.16-x*0.04-t*0.85,1.6) + 0.14*pk(x*0.11+z*0.14+t*1.5,2.0)
+        + 0.07*Math.sin(x*0.37-z*0.31+t*2.2) + 0.04*Math.sin(x*0.71+z*0.53-t*3.1);
+  const ds=COAST_Z+coastLine(x)-z, sm=(a,b,v)=>{ const u=clamp((v-a)/(b-a),0,1); return u*u*(3-2*u); };
+  h += 0.34*sm(48,12,ds)*sm(-1,6,ds)*pk(ds*0.42+t*1.25+0.8*Math.sin(x*0.045)+0.4*Math.sin(x*0.13+1.7), 3.0);
+  return h-0.23;
+}
 const waterMat = new THREE.ShaderMaterial({
   transparent:true,
   extensions:{ derivatives:true },
@@ -1706,8 +1715,8 @@ let leaveTimer=30;
 function restSpot(x0, x1){
   const k0=Math.ceil((x0-JETTY_X)/TERR_PERIOD), jx=JETTY_X+k0*TERR_PERIOD;
   let x, z;
-  if(jx<=x1 && Math.random()<0.6){ x=jx-4-6*Math.random(); z=COAST_Z+coastLine(jx)-8-18*Math.random(); }
-  else { x=x0+(x1-x0)*Math.random(); z=COAST_Z+coastLine(x)-6-12*Math.random(); }
+  if(jx<=x1 && Math.random()<0.6){ x=jx-4-6*Math.random(); z=COAST_Z+coastLine(jx)-14-14*Math.random(); }
+  else { x=x0+(x1-x0)*Math.random(); z=COAST_Z+coastLine(x)-30-25*Math.random(); }
   for(let i=0;i<20 && terrainH(x,z)>-0.4;i++) z-=3;      // make sure it's water
   return [x, z];
 }
@@ -3048,6 +3057,7 @@ let telemetry={}, playing=true, lastT=performance.now();
 function updateOneBird(st){
   const m=st.mesh; if(!m) return;
   m.root.position.copy(st.pos);
+  if(st.mode==='swim' || (st.mode==='takeoff' && st.pos.y<0.3)) m.root.position.y += waveHJS(st.pos.x, st.pos.z);   // ride the drawn swell
   m.root.quaternion.copy(st.quat);
   if(st.cmdRoll) m.root.rotateX(-st.cmdRoll);   // cosmetic lean into a lateral correction (physics stays wings-level)
   // flap at shoulder, fold at elbow, twist each segment -- matching the physics
