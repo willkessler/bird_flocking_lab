@@ -3213,7 +3213,11 @@ function updatePocketFx(){
 }
 function frame(now){
   requestAnimationFrame(frame);
-  let dt=(now-lastT)/1000; lastT=now; dt=clamp(dt,0,0.05)*P.timeScale;
+  const dt=(now-lastT)/1000; lastT=now;
+  stepFrame(clamp(dt,0,0.05)*P.timeScale);
+}
+// one frame of the app: physics in fixed substeps, then visuals, HUD, charts and the render
+function stepFrame(dt){
   if(P.diveSlowmo && state && (state.mode==='dive' || state.mode==='under')) dt*=0.25;   // slow motion for the dive
   if(playing && dt>0){
     // fixed substeps for stability
@@ -3275,7 +3279,7 @@ window.__sim={P,
   renderFrame(dt){ updateBirdMesh(dt||1/60); updateFishFx(dt||1/60); updatePocketFx(); updateWorld(); updateCamera(); renderer.render(scene,camera); }, get focus(){return focus;}, set focus(i){setFocus(i);},
   get skimState(){return skimState;}, get flockBaseAlt(){return flockBaseAlt;},
   forceSkim(){ skimCountdown=0; },   // trigger a dip now (for testing)
-  derived, integrate, stepFlock, stepBird, computeWakes, flockControl, upwashAt, WK,
+  tick(dt){ stepFrame(dt); }, derived, integrate, stepFlock, stepBird, computeWakes, flockControl, upwashAt, WK,
   resetState, resetFlock, seedRandom, disturb, fingerAt, fogStatus, camera, get pockets(){return pockets;}, computeForces, cam, buildBird,
   addSchool, get schools(){return schools;}, fishLog, fishStatus, fishingLab, dropSchoolAt,
   scene, renderer, updateWorld, SUN_DIR, coastLine, terrainH, JETTY_X, TERR_PERIOD, COAST_Z};
