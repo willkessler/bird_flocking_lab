@@ -59,13 +59,19 @@ So the goal here is to build the flock up from honest single-bird physics:
 - **On the water**, each bird faces its own way and paddles slowly about, then takes off roughly into the wind.
 - **Scenery:** timber piers on pilings with planked decks and railings, groves of trees and bushes along the shore, a sun in the sky (ahead of the flock, about 40° up; the bird shadows on the sea are cast from it), and fair-weather cumulus clouds.
 
-**Viewing:** orbit camera, `1`–`9` to ride a bird's-eye view, `Shift`+`1`–`9` for an over-the-shoulder chase cam (drag to look around), and live telemetry and force charts for the focused bird.
+**Coming and going (v25):** the flock isn't a closed club. About every 45 s a bird drops out (never the lead, and never from a flock of 6 or fewer). Three in four glide down to rest on the water beside a pier or just off the beach; the rest head off out to sea. Birds resting along the coast ahead (two at the start) take off and tag on when a flock passes within about 90 m, after resting at least 20 s. A bird left out of sight behind comes back as a fresh bird resting somewhere ahead. So the flock grows and shrinks. *Birds come and go* turns it off; with it off, seeded runs replay v24 exactly.
+
+**The coast (v25):** the sea has sharper wave crests with flat troughs, whitecaps on the highest crests, swell that steepens and breaks into lines of white water as it rolls toward the beach, foam running up the sand, and paler shallows. Lifeguard towers stand on the beach and boats (sailboats and small fishing boats) ride at anchor 100–200 m offshore, well clear of the flock.
+
+**Sound (v25):** off until you click the speaker icon (top right) or press `M`; hover it for a volume slider. Everything is synthesized in the browser: wind that roars with the airspeed of the bird you ride or chase, a whoosh with each wingbeat (nearby birds panned to where they are), splashes when birds dive (and a soft patter when they run to take off), and surf that gets louder near the shore. Under water it all goes dull.
+
+**Viewing:** orbit camera on the lead bird (it switches when the lead changes hands, and sits centred in the clear space between the side panels), `[` `]` to watch another bird, `1`–`9` to ride a bird's-eye view, `Shift`+`1`–`9` for an over-the-shoulder chase cam (drag to look around), `0` back to the lead, `F` for full screen, and a *Follow* checkbox to park the camera (it picks the flock up again once the flock is out of sight). Live telemetry and force charts for the focused bird. A GitHub icon in the top right links back here.
 
 ## Repository layout
 
 | Path | What |
 |---|---|
-| `index.html` | The current version of the lab (v24; the version shows next to the title in the lab's panel), which is where iteration happens |
+| `index.html` | The current version of the lab (v25; the version shows next to the title in the lab's panel), which is where iteration happens |
 | `versions/` | Every earlier build, kept for reference (see below) |
 | `docs/conversation-notes.md` | Notes from the design conversation that produced v1 through v12 |
 | `docs/next-steps.md` | Where the investigation stands (V vs single file) and the experiments to try next |
@@ -89,7 +95,8 @@ There are two naming series, in chronological order:
 - `bird-sim-v21` (Nov 2026): *Finger of God* mode. Tick it and click near the flock to drop a sudden air pocket on it (a downdraft spreading outward), which knocks the birds nearby off course and startles them for up to a second. Up to 5 in a quick burst, then it recharges after 8 s without clicks. *Disturbance strength* and *size* sliders.
 - `bird-sim-v22` (Nov 2026): two options for how a bird picks a spot, both off by default. *Joiners see the whole flock* widens its view from a narrow cone ahead (about 27° each side, 30 m) to about 70° each side and 60 m. *Energy cost of catching up* prices the distance to a spot from energy: the extra power to fly faster than the flock, plus the drafting lost on the way, spread over the 20 s the bird expects to hold the spot.
 - `bird-sim-v23` (Nov 2026): fishing. Fish schools (automatic, or click the water to drop one), hungry birds that circle, plunge-dive with their wings really tucked, pop back up, drain and swallow, and run along the water to take off. A *Fishing lab* button sets up one hungry pelican and a school. With fishing off, seeded runs replay v22 exactly.
-- `bird-sim-v24` (Nov 2026): fishing that looks like the real thing. Birds scout a school for a couple of laps, dive one at a time on pods of fish that come up to the surface, land about 3 dives in 4, and leave once full (so the flock breaks up). Swimming birds face their own ways. Real-looking piers, trees and bushes on the shore, a sun and clouds. Fixes a dotted-streak glitch (spent spray showed through the sea) and the clipped school label. With fishing off, seeded runs replay v23 exactly. This is the same as the current `index.html`.
+- `bird-sim-v24` (Nov 2026): fishing that looks like the real thing. Birds scout a school for a couple of laps, dive one at a time on pods of fish that come up to the surface, land about 3 dives in 4, and leave once full (so the flock breaks up). Swimming birds face their own ways. Real-looking piers, trees and bushes on the shore, a sun and clouds. Fixes a dotted-streak glitch (spent spray showed through the sea) and the clipped school label. With fishing off, seeded runs replay v23 exactly.
+- `bird-sim-v25` (Nov 2026): birds come and go (they drop out to rest by a pier or the beach, or head out to sea, and resting birds join flocks going by), synthesized sound (off by default, with a volume slider), a livelier sea (sharp crests, whitecaps, breaking surf, foam at the waterline), lifeguard towers and boats at anchor, a GitHub link, `F` for full screen, a *Follow* checkbox, and a camera that stays on the lead. Fixes the view drifting off into empty sky with Follow off. With *Birds come and go* off, seeded runs replay v24 exactly. This is the same as the current `index.html`.
 
 ## How the formation emerges (v13–v18)
 

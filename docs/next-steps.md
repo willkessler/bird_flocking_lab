@@ -282,3 +282,14 @@ With fishing off, seeded runs are bit-identical to v23 (the new scenery draws it
 - Fishing runs: a spec with `"fish":{"dx":90,"z":-6}` puts a school 90 m ahead of bird 0 and reports every dive (height, entry speed and angle, miss, catch, depth, time under, takeoff run) plus mode changes; `"trace":true` adds a 0.1 s trace while birds dive, swim and take off.
 - Specs live in `tools/flock-metrics/specs/`: `default.json` (20 birds), `strings.json` (12 birds, skims) and `v18.json` (crosswind, jetties, updraft, quirk 0) and `fishing.json` (one pelican fishing; a flock of 20 fishing).
 - Results can be compared by eye from the JSON lines. In past sessions a small script printed two runs side by side.
+
+## Coming and going (v25)
+
+Birds now drop out of the flock about every 45 s (`leaveEvery`), never the lead and never below `minFlock` (6). Three in four glide down to rest on the water beside a pier or off the beach; the rest head out to sea. Resting birds take off and join when a flock passes within `joinRange` (90 m), after resting at least `restMin` (20 s). A bird left out of sight behind is recycled as a fresh bird resting ahead, and two birds (`outsiders`) start out resting ahead.
+
+In a 4-minute seeded run (seed 3, 20 birds) the flying flock moved between 18 and 20 birds, with a leave or a join about every 20–30 s. With `comeGo` off, seeded runs replay v24 bit for bit.
+
+Leaving and joining isn't used yet by the flock metrics. Things to look at:
+- whether joiners settle into the V the same way as the birds that were there from the start (v13–v18 found arrival order shapes the V);
+- whether flock size changes how long a lead lasts;
+- resting on land (on the beach or a pier rail) needs a standing pose for the bird; for now they rest on the water.
