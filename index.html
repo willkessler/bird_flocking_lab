@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v27</title>
+<title>Bird Flight Lab v29</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -19,28 +19,47 @@
   #scene{position:absolute;inset:0}
   /* Panels */
   .panel{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(8px);box-shadow:0 10px 40px #0008}
-  #controls{top:12px;left:12px;width:326px;max-height:calc(100% - 24px);overflow-y:auto;padding:0}
-  #controls::-webkit-scrollbar{width:9px}
-  #controls::-webkit-scrollbar-thumb{background:#2a3a4f;border-radius:8px}
-  #controls h1{cursor:pointer}
+  /* one panel down the left (v29): its title folds the whole thing away; inside, a scrolling column of three
+     sub-panels -- Controls, Flight state, Forces over time -- each folding on its own title */
+  #controls{top:12px;left:12px;width:326px;max-height:calc(100% - 84px);display:flex;flex-direction:column;overflow:hidden;padding:0}
+  #ctlBody{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+  #ctlBody::-webkit-scrollbar{width:9px}
+  #ctlBody::-webkit-scrollbar-thumb{background:#2a3a4f;border-radius:8px}
+  #controls h1{cursor:pointer;flex:0 0 auto}
   #controls.collapsed{width:auto}
-  #controls.collapsed #secHost{display:none}
+  #controls.collapsed #ctlBody{display:none}
   #controls.collapsed h1{border-bottom:none}
   h1 .chev{color:var(--accent);font-size:11px;margin-left:10px;transition:transform .15s;transform:rotate(0deg)}
   #controls.collapsed h1 .chev{transform:rotate(-90deg)}
-  #hud{top:58px;right:12px;width:270px;padding:12px 14px}
   #corner{position:absolute;top:12px;right:12px;display:flex;gap:8px;z-index:6}
   .iconBtn{width:36px;height:36px;display:grid;place-items:center;padding:0;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--ink);cursor:pointer;backdrop-filter:blur(8px);box-shadow:0 6px 24px #0006;transition:.12s;text-decoration:none}
   .iconBtn:hover{border-color:var(--accent);color:#fff}
   .iconBtn svg{width:20px;height:20px;fill:currentColor}
   .iconBtn.on{border-color:var(--accent);color:var(--accent)}
+  /* tooltips for the corner icons (v29): instant and styled, instead of the browser's slow, easily-missed title text */
+  #corner .iconBtn{position:relative}
+  #corner .iconBtn[data-tip]:hover::after{content:attr(data-tip);position:absolute;top:calc(100% + 8px);right:0;z-index:8;
+    white-space:nowrap;max-width:none;pointer-events:none;background:#0b0f14ee;color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:500;line-height:1.3;box-shadow:0 6px 20px #0008}
+  #corner #btnSound[data-tip]:hover::after{right:calc(100% + 8px)}   /* (beside the volume slider that drops down below it) */
+  .wxIcon{position:relative;cursor:default}
+  .wxIcon span{position:absolute;inset:0;display:grid;place-items:center;transition:opacity 2.5s ease}
+  .wxIcon svg{width:24px;height:24px}
   .sndWrap{position:relative}
   .volPop{position:absolute;top:100%;left:0;width:36px;padding-top:6px;display:none;z-index:7}
   .sndWrap:hover .volPop,.sndWrap:focus-within .volPop{display:block}
   .volBox{background:var(--panel);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(8px);box-shadow:0 6px 24px #0006;padding:10px 0;display:flex;justify-content:center}
   #volSlider{writing-mode:vertical-lr;direction:rtl;width:20px;height:110px;margin:0;accent-color:var(--accent);cursor:pointer}
-  #charts{right:12px;bottom:12px;width:270px;padding:10px 12px}
-  #toolbar{bottom:12px;left:12px;padding:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 320px)}
+  .sub{border-bottom:1px solid var(--line)}
+  .sub:last-child{border-bottom:none}
+  .phead{cursor:pointer;user-select:none;padding:11px 14px;font-weight:700;display:flex;align-items:center;gap:6px;background:#ffffff06}
+  .phead:hover{background:#ffffff0d}
+  .phead .chev{color:var(--accent);font-size:11px;margin-left:auto;display:inline-block;transition:transform .15s}
+  .sub.collapsed .phead .chev{transform:rotate(-90deg)}
+  .sub.collapsed > :not(.phead){display:none !important}
+  .subIn{padding:2px 14px 12px}
+  .sub > #secHost{padding:0}
+  #toolbar{bottom:12px;left:12px;padding:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 24px)}
   h1{font-size:14px;margin:0;padding:13px 14px 11px;letter-spacing:.3px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
   h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
   h1 small{color:var(--dim);font-weight:400;font-size:11px;margin-left:auto}
@@ -87,6 +106,7 @@
   .badge.stall{background:#3a1212;color:var(--bad)}
   .badge.flap{background:#1c3a38;color:var(--accent)}
   .badge.coast{background:#20293f;color:#9aa7ff}
+  .badge.cliff{background:#3a2e17;color:#ffd18a}
   #chartCanvas{width:100%;height:150px;display:block}
   .clab{display:flex;gap:12px;font-size:10px;color:var(--dim);margin-top:4px;flex-wrap:wrap}
   .clab i{width:9px;height:3px;display:inline-block;border-radius:2px;margin-right:4px;vertical-align:middle}
@@ -99,28 +119,33 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v27</small> <small>blade-element</small><span class="chev">▾</span></h1>
-    <!-- sections injected here -->
-    <div id="secHost"></div>
-  </div>
-
-  <div class="panel" id="hud">
-    <div style="display:flex;align-items:center;justify-content:space-between">
-      <div style="font-weight:700">Flight state <span id="modeBadge" class="badge">FLAP</span><span id="stallBadge" class="badge ok">OK</span></div>
-    </div>
-    <div class="hud-grid" id="statGrid"></div>
-    <div class="bars" id="forceBars"></div>
-    <div class="hint" id="hudHint"></div>
-  </div>
-
-  <div class="panel" id="charts">
-    <div style="font-weight:700;margin-bottom:4px">Forces over time</div>
-    <canvas id="chartCanvas"></canvas>
-    <div class="clab">
-      <span><i style="background:var(--lift)"></i>Lift</span>
-      <span><i style="background:var(--thrust)"></i>Net thrust</span>
-      <span><i style="background:var(--weight)"></i>Weight</span>
-      <span><i style="background:#7fd1ff"></i>Altitude</span>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v29</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <div id="ctlBody">
+      <div class="sub collapsed" id="ctlSub">
+        <div class="phead" title="Click to expand / collapse">Controls<span class="chev">▾</span></div>
+        <!-- sections injected here -->
+        <div id="secHost"></div>
+      </div>
+      <div class="sub collapsed" id="hud">
+        <div class="phead" title="Click to expand / collapse">Flight state <span id="modeBadge" class="badge" title="What the flock as a whole is doing">CRUISING</span><span id="stallBadge" class="badge flap" title="Whether most of the flock is flapping or gliding">FLAPPING</span><span class="chev">▾</span></div>
+        <div class="subIn">
+          <div class="hud-grid" id="statGrid"></div>
+          <div class="bars" id="forceBars"></div>
+          <div class="hint" id="hudHint"></div>
+        </div>
+      </div>
+      <div class="sub collapsed" id="charts">
+        <div class="phead" title="Click to expand / collapse">Forces over time<span class="chev">▾</span></div>
+        <div class="subIn">
+          <canvas id="chartCanvas"></canvas>
+          <div class="clab">
+            <span><i style="background:var(--lift)"></i>Lift</span>
+            <span><i style="background:var(--thrust)"></i>Net thrust</span>
+            <span><i style="background:var(--weight)"></i>Weight</span>
+            <span><i style="background:#7fd1ff"></i>Altitude</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -129,21 +154,22 @@
     <button class="btn" id="btnReset">↺ Restart flight</button>
     <button class="btn" id="btnResetAll">⟲ Reset controls</button>
     <label class="btn" style="display:flex;align-items:center;gap:6px" title="Keep the camera on the lead bird"><input type="checkbox" id="chkFollow" checked style="margin:0;accent-color:var(--accent)"> 🎥 Follow</label>
-    <span style="color:var(--dim);font-size:11px">drag to orbit · scroll to zoom · <b style="color:var(--ink)">1–9</b> ride a bird · <b style="color:var(--ink)">⇧1–9</b> over-shoulder · <b style="color:var(--ink)">0</b> orbit the lead · <b style="color:var(--ink)">[ ]</b> other birds · <b style="color:var(--ink)">M</b> sound · <b style="color:var(--ink)">F</b> full screen</span>
+    <span style="color:var(--dim);font-size:11px">drag to orbit · scroll to zoom · <b style="color:var(--ink)">1–9</b> ride a bird · <b style="color:var(--ink)">⇧1–9</b> over-shoulder · <b style="color:var(--ink)">0</b> orbit the flock · <b style="color:var(--ink)">[ ]</b> other birds · <b style="color:var(--ink)">M</b> sound · <b style="color:var(--ink)">F</b> full screen</span>
   </div>
 
   <div id="corner">
+    <div class="iconBtn wxIcon" id="wxIcon" data-tip="Current weather" aria-label="Current weather"><span class="wxA"></span><span class="wxB"></span></div>
     <div class="sndWrap">
-    <button class="iconBtn" id="btnSound" title="Sound is off — click to hear wind, wingbeats, splashes and surf (M)" aria-label="Turn sound on">
+    <button class="iconBtn" id="btnSound" data-tip="Sound is off — click to hear wind, wingbeats, splashes and surf (M)" aria-label="Turn sound on">
       <svg id="icoSoundOff" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M16.3 8.7l1.4-1.4L20 9.6l2.3-2.3 1.4 1.4L21.4 11l2.3 2.3-1.4 1.4L20 12.4l-2.3 2.3-1.4-1.4 2.3-2.3z"/></svg>
       <svg id="icoSoundOn" viewBox="0 0 24 24" style="display:none"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M14 7.2v2.1a3 3 0 010 5.4v2.1a5 5 0 000-9.6z"/><path d="M14 3.2v2.1a7 7 0 010 13.4v2.1a9 9 0 000-17.6z"/></svg>
     </button>
     <div class="volPop"><div class="volBox" title="Volume"><input type="range" id="volSlider" min="0" max="100" step="1" aria-label="Volume"></div></div>
     </div>
-    <button class="iconBtn" id="btnFull" title="Full screen (F)" aria-label="Full screen">
+    <button class="iconBtn" id="btnFull" data-tip="Full screen (F)" aria-label="Full screen">
       <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"/></svg>
     </button>
-    <a class="iconBtn" id="ghLink" href="https://github.com/willkessler/bird_flocking_lab" target="_blank" rel="noopener" title="Source code on GitHub" aria-label="Source code on GitHub">
+    <a class="iconBtn" id="ghLink" href="https://github.com/willkessler/bird_flocking_lab" target="_blank" rel="noopener" data-tip="Source code on GitHub" aria-label="Source code on GitHub">
       <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
     </a>
   </div>
@@ -228,6 +254,8 @@ const P = {
   cohesion:0.5,
   chaseRange:150,              // m: how far ahead a straggler can still see (and chase) the flock
   chaseBoost:0.12,             // extra speed (fraction of pace, per unit cohesion) a straggler flies to catch up                // how hard a bird that has fallen away from the flock works to close the gap and rejoin
+  sizeVar:1,                   // v29: birds differ in size -- males a little bigger than females, each one its own (0 = all alike)
+  juvFrac:0.15,                // v29: share of the flock that are young birds (brown, a bit smaller and lighter)
   quirk:0.5,                   // how much individual birds differ in their choices (spacing, side, height, hesitation); 0 = identical robots
   avoidObstacles:1,            // birds see the jetties and hills ahead and climb over or turn away from them
   clearView:0.8,               // m/s a boxed-in bird (birds ahead on BOTH sides) drifts toward the open side; 0 = off
@@ -239,6 +267,9 @@ const P = {
   vmax:30, elevatorFrac:0.3,
   // wind
   headwind:1.5, crosswind:-0.5, updraft:0, turbulence:1.0,
+  dayCycle:1, dayMinutes:16, weather:0.6,   // v29: the sun rises and sets (a whole day in dayMinutes); coastal fog and cloud come and go
+  ridgeWind:6,                 // v29: the onshore sea breeze blowing up the bluffs (m/s) -- it rises over the cliff edge as ridge lift
+  ridgeEnable:1, ridgePeriod:110, ridgeDuration:45,   // v29: now and then the flock goes up to soar the cliff edge (s between visits, s spent there)
   // viz: wind vector field
   vWind:0,
   fingerOfGod:0,               // click near the flock to drop a sudden air pocket on it (see disturb())
@@ -255,6 +286,11 @@ const P = {
   diveSlowmo:0,                // slow the sim while the bird you're watching dives
   // COME AND GO (v25): birds drop out of the flock to rest or wander off; resting birds join flocks going by
   smoothFlap:1,                // v26: flap bursts ease in from a downstroke, last 2+ beats and ease out onto the glide
+  camFlock:1,                  // v29: the camera watches the middle of the flock (not its lead) until you pick a bird
+  rhythmOver:2,                // easy cruise: how far out of place (m of gap, roughly) before a follower breaks rhythm to catch up
+  rhythmSkip:-0.3,             // easy cruise: a follower already a little ahead (or fast) sits a burst out -- drafting, it needs fewer
+  rhythmAmp:0.55,              // easy cruise: a follower's beat strength when on station (it beats harder to close up, softer to drop back)
+  easyCruise:1,                // v28: at cruise height, flap up to a little over pace, then glide (sinking a little) until a little under it
   comeGo:1,
   leaveEvery:45,               // s: about how often a bird leaves the flock
   minFlock:6,                  // nobody leaves a flock this small
@@ -290,7 +326,7 @@ const P = {
   // sim
   timeScale:1.0,
   // viz toggles
-  vForces:0, vFlow:1, vTrail:0
+  vForces:0, vFlow:0, vTrail:0
 };
 
 /* ------------------------------------------------------------------ PRESETS */
@@ -333,15 +369,15 @@ scene.fog = new THREE.Fog(0x9fc7e8, 90, 470);
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.05, 2000);
 
 // lights
-scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x24405a, 0.95));
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x24405a, 0.95); scene.add(hemi);
 // the sun: ahead and a little inland, about 40 deg up -- drawn in the sky dome too, and the bird shadows
 // on the sea are cast along it
-const SUN_DIR = new THREE.Vector3(55,50,25).normalize();
+const SUN_DIR = new THREE.Vector3(55,50,25).normalize();   // (moves through the day: see DAY AND WEATHER)
 const sun = new THREE.DirectionalLight(0xfff6e8, 1.1);
 sun.position.copy(SUN_DIR).multiplyScalar(100); scene.add(sun);
 
 // coastline constants (shared by the ocean clip and the terrain)
-const COAST_Z=42, TERR_PERIOD=360, Z_NEAR=14, Z_FAR=260;
+const COAST_Z=42, TERR_PERIOD=360, Z_NEAR=14, Z_FAR=780;   // (v29: the hills run on far inland, so their end is always lost in the haze)
 
 // ----- ocean: a big plane displaced by a GPU wave field, keyed to WORLD x/z so it can recenter on
 // the flock every frame while the swell stays put (the motion cue when the flock drops to skim).
@@ -360,11 +396,17 @@ const WATER_GLSL=`
   float pk(float ph, float k){ return exp(k*(sin(ph)-1.0)); }          // 0..1: a sharp crest, a long flat trough
   float surfPh(vec2 p, float ds){ return ds*0.42 + uTime*1.25 + 0.8*sin(p.x*0.045) + 0.4*sin(p.x*0.13+1.7); }
   float shoal(float ds){ return smoothstep(48.0,12.0,ds)*smoothstep(-1.0,6.0,ds); }
+  // v28: the swell comes in GROUPS (a slow, drifting swell-height pattern) and from five directions at odd angles,
+  // so the crests don't lock into a lattice that repeats into the distance
+  float grp(vec2 p){ return 0.62 + 0.38*sin(p.x*0.021 + p.y*0.013 - uTime*0.31)*sin(p.x*0.0083 - p.y*0.0171 + 1.3 + uTime*0.17); }
   float waveH(vec2 p){
-    float h = 0.30*pk(p.x*0.19 + p.y*0.03 + uTime*1.05, 1.6)
+    float g = grp(p);
+    float h = g*(0.30*pk(p.x*0.19 + p.y*0.03 + uTime*1.05, 1.6)
             + 0.24*pk(p.y*0.16 - p.x*0.04 - uTime*0.85, 1.6)
             + 0.14*pk(p.x*0.11 + p.y*0.14 + uTime*1.5, 2.0)
+            + 0.10*pk(p.x*0.083 - p.y*0.127 + uTime*1.21, 1.8))
             + 0.07*sin(p.x*0.37 - p.y*0.31 + uTime*2.2)
+            + 0.05*sin(p.x*0.29 + p.y*0.41 - uTime*1.93)
             + 0.04*sin(p.x*0.71 + p.y*0.53 - uTime*3.1);
     float ds = uCoast + cl(p.x) - p.y;                                   // m out from the waterline
     h += 0.34*shoal(ds)*pk(surfPh(p, ds), 3.0);                          // swell steepening as it nears the beach
@@ -373,8 +415,10 @@ const WATER_GLSL=`
 // the same wave height in JS, so birds sitting on the water ride the swell you see (looks only)
 function waveHJS(x, z){
   const t=waterMat.uniforms.uTime.value, pk=(ph,k)=>Math.exp(k*(Math.sin(ph)-1));
-  let h = 0.30*pk(x*0.19+z*0.03+t*1.05,1.6) + 0.24*pk(z*0.16-x*0.04-t*0.85,1.6) + 0.14*pk(x*0.11+z*0.14+t*1.5,2.0)
-        + 0.07*Math.sin(x*0.37-z*0.31+t*2.2) + 0.04*Math.sin(x*0.71+z*0.53-t*3.1);
+  const g=0.62+0.38*Math.sin(x*0.021+z*0.013-t*0.31)*Math.sin(x*0.0083-z*0.0171+1.3+t*0.17);
+  let h = g*(0.30*pk(x*0.19+z*0.03+t*1.05,1.6) + 0.24*pk(z*0.16-x*0.04-t*0.85,1.6) + 0.14*pk(x*0.11+z*0.14+t*1.5,2.0)
+        + 0.10*pk(x*0.083-z*0.127+t*1.21,1.8))
+        + 0.07*Math.sin(x*0.37-z*0.31+t*2.2) + 0.05*Math.sin(x*0.29+z*0.41-t*1.93) + 0.04*Math.sin(x*0.71+z*0.53-t*3.1);
   const ds=COAST_Z+coastLine(x)-z, sm=(a,b,v)=>{ const u=clamp((v-a)/(b-a),0,1); return u*u*(3-2*u); };
   h += 0.34*sm(48,12,ds)*sm(-1,6,ds)*pk(ds*0.42+t*1.25+0.8*Math.sin(x*0.045)+0.4*Math.sin(x*0.13+1.7), 3.0);
   return h-0.23;
@@ -382,18 +426,23 @@ function waveHJS(x, z){
 const waterMat = new THREE.ShaderMaterial({
   transparent:true,
   extensions:{ derivatives:true },
-  uniforms:{ uTime:{value:0}, uSun:{value:SUN_DIR.clone()}, uCoast:{value:COAST_Z} },
+  uniforms:{ uTime:{value:0}, uSun:{value:SUN_DIR.clone()}, uCoast:{value:COAST_Z}, uTint:{value:new THREE.Vector3(1,1,1)}, uHaze:{value:new THREE.Vector3(0.55,0.70,0.80)} },
   vertexShader: WATER_GLSL+`
     varying vec3 vW; varying float vH;
     void main(){
       vec4 wp=modelMatrix*vec4(position,1.0);
+      // jitter each grid point by a hash of its WORLD cell (the plane moves by whole cells, so it stays put):
+      // irregular facets instead of a square lattice (the edge row is left alone so the plane's border is straight)
+      vec2 cell=floor(wp.xz/4.0+0.5), jit=vec2(fract(sin(dot(cell,vec2(12.9898,78.233)))*43758.5453),
+                                               fract(sin(dot(cell,vec2(39.3468,11.135)))*24634.6345))-0.5;
+      if(abs(position.x)<749.0 && abs(position.y)<749.0){ wp.xz+=jit*2.8; }
       vH=waveH(wp.xz);
-      vec3 dp=position; dp.z+=vH;                     // local +z -> world +y after the -90 x-rotation
+      vec3 dp=position; dp.xy+=vec2(jit.x,-jit.y)*((abs(position.x)<749.0 && abs(position.y)<749.0)?2.8:0.0); dp.z+=vH;                     // local +z -> world +y after the -90 x-rotation
       vec4 wp2=modelMatrix*vec4(dp,1.0); vW=wp2.xyz;
       gl_Position=projectionMatrix*viewMatrix*wp2;
     }`,
   fragmentShader: WATER_GLSL+`
-    uniform vec3 uSun; varying vec3 vW; varying float vH;
+    uniform vec3 uSun, uTint, uHaze; varying vec3 vW; varying float vH;
     float hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
     float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
       return mix(mix(hsh(i),hsh(i+vec2(1,0)),f.x), mix(hsh(i+vec2(0,1)),hsh(i+vec2(1,1)),f.x), f.y); }
@@ -407,10 +456,14 @@ const waterMat = new THREE.ShaderMaterial({
       vec3 col=mix(deep,shallow, clamp(n.y*1.6-0.55,0.0,1.0));   // facets tilted off-vertical read lighter
       col=mix(col, vec3(0.26,0.62,0.62), smoothstep(30.0,4.0,ds)*0.55);   // shallows over the sand go turquoise
       col*=0.72+0.5*dif;
+      float far=smoothstep(70.0,420.0,length(vW.xz-cameraPosition.xz));   // far off, the facets average out
+      float slick=vn(mod(vW.xz,2048.0)*0.012+vec2(uTime*0.01,0.0));       // wind slicks and darker cat's-paws
+      vec3 avg=mix(vec3(0.10,0.34,0.48), vec3(0.15,0.42,0.55), slick)*(0.85+0.4*clamp(uSun.y,0.0,1.0));
+      col=mix(col, avg, far*0.75);
       vec2 q=mod(vW.xz, 2048.0);                              // keep the noise precise far down the coast
       float nz=vn(q*0.35+vec2(uTime*0.15,0.0))*0.6 + vn(q*1.3-vec2(0.0,uTime*0.2))*0.4;
       // whitecaps: only the highest crests, broken up into patches
-      float foam = smoothstep(0.30,0.46,vH) * smoothstep(0.45,0.75,nz) * 0.8;
+      float foam = smoothstep(0.24,0.40,vH) * smoothstep(0.45,0.75,nz) * 0.8;   // (crests run a bit lower in the groups)
       // the surf zone: each set breaks into a line of white water just after its crest passes, which
       // trails off behind it toward the beach
       float sh = shoal(ds), ph = surfPh(vW.xz, ds);
@@ -420,7 +473,9 @@ const waterMat = new THREE.ShaderMaterial({
       // the wash: lacy foam running up and back at the waterline
       float wash = smoothstep(6.0+2.0*sin(uTime*0.9+vW.x*0.07), 0.0, ds) * smoothstep(0.2,0.6,nz);
       foam = max(foam, wash);
-      col = mix(col, vec3(0.93,0.97,1.0)*(0.85+0.2*dif), clamp(foam,0.0,1.0));
+      col = mix(col, vec3(0.93,0.97,1.0)*(0.85+0.2*dif), clamp(foam*(1.0-0.6*far),0.0,1.0));
+      col *= uTint;                                                       // the light of the hour (and the weather)
+      col = mix(col, uHaze, 0.35*smoothstep(150.0,700.0,length(vW.xz-cameraPosition.xz)));   // haze toward the horizon
       gl_FragColor=vec4(col, 0.96);
     }`
 });
@@ -467,8 +522,45 @@ function terrainH(x,z){
   if(u<1) return b0 + (H-b0)*(0.12*u + 0.88*Math.pow(u, 1.7));   // a talus apron, steepening to the lip
   const top=inland-foot-W;                              // the clifftop: gentle dunes rising inland, then hills
   return H + 0.05*top + 1.6*Math.sin(0.09*top + 11*_tk*x) * Math.min(1, top/12)
-       + 40*clamp((top-60)/110, 0, 1)**1.5 * (0.75 + 0.25*Math.sin(2*_tk*x + 0.03*z) + 0.15*Math.sin(6*_tk*x + 1.1));
+       + 40*clamp((top-60)/110, 0, 1)**1.5 * (0.75 + 0.25*Math.sin(2*_tk*x + 0.03*z) + 0.15*Math.sin(6*_tk*x + 1.1))
+       + 45*clamp((top-200)/220, 0, 1) * (0.55 + 0.45*Math.sin(3*_tk*x + 0.011*z + 0.7)*Math.cos(0.017*z - _tk*x));   // and further back, the coast range
 }
+// RIDGE LIFT (v29): the onshore breeze can't go through the bluff, so it goes up and over it. In front of the
+// face and just above the lip the air rises -- a band of lift a few dozen metres wide along the cliff edge,
+// strongest just seaward of the lip and from about half the cliff's height to a couple of dozen metres above
+// it, fading higher up. (Fort Funston's hang gliders and its pelicans both soar it.) Over the open sea there is none.
+function ridgeLift(x, y, z){
+  const U=P.ridgeWind||0; if(U<=0) return 0;
+  const inl = z - COAST_Z - coastLine(x); if(inl < -5) return 0;
+  const [foot, W, H] = _cliff(x), lip = foot + W;
+  if(inl > lip + 45 || y > H + 80) return 0;
+  const a = (inl - (lip - 10))/24;                      // across the band (wide enough for a whole V to find some of it)
+  const hb = y - terrainH(x, z); if(hb <= 0) return 0;  // (none inside the ground)
+  return 0.5*U*Math.exp(-a*a)*clamp(hb/6, 0, 1)*Math.exp(-Math.max(0, y - (H + 15))/30)*clamp(y/(0.5*H), 0, 1);
+}
+// the smooth line of the cliff edge (no gullies or rain runnels) and the height to soar it at
+function _cliffH0(x){ return 40 + 9*Math.sin(2*_tk*x+0.5) + 6*Math.sin(5*_tk*x+1.2); }
+function ridgeLineZ(x){ return COAST_Z + coastLine(x) + _bl(x) + 2.2*Math.sin(5*_tk*x+0.8) + 0.42*_cliffH0(x) - 8; }
+// The height to soar it at: where the rising air just about matches a gliding pelican's sink (~1.4 m/s), so they can
+// hold it on outstretched wings -- higher in a stronger breeze, never more than ~30 m over the lip (v29: they used
+// to hold a fixed height in lift that would have carried them higher, and had to flap to keep it).
+function ridgeAlt(x){
+  const z=ridgeLineZ(x), H=_cliffH0(x); let y=H+6;
+  while(y < H+30 && ridgeLift(x, y+1, z) > 1.4) y+=1;
+  return Math.max(y, 0.5*(_cliffH0(x)+_cliffH0(x+40)) + 6);
+}
+// The line the flock follows: along the sea, or (part way through a visit) the cliff edge.
+let ridgeK=0, ridgeWant=false, ridgeHold=0, ridgeCountdown=60;
+// A visit goes: swing in toward the bluffs at cruise height (ridgeK 0 -> 0.5) to a line just off the foot of the
+// face, where the rising air already reaches down to them; then let it carry them up (0.45 -> 0.9) as the line eases
+// out to just off the lip. Climbing 30 m on their own wings had worn them out by the time they got there, and the
+// tired birds fell away from the lead and out of the lift (v29).
+const _sst=u=>{ u=clamp(u,0,1); return u*u*(3-2*u); };
+const _rKl=()=>_sst(ridgeK/0.5);                 // sideways, low
+const _rKc=()=>_sst((ridgeK-0.45)/0.45);         // up, in the lift
+function flockRidgeZ(x){ return ridgeLineZ(x) - 9*(1 - _rKc()); }
+function flockLineZ(x){ const k=_rKl(); return k>0 ? coastFollow(x) + k*(flockRidgeZ(x) - coastFollow(x)) : coastFollow(x); }
+function flockLineSlope(x){ const k=_rKl(); return k>0 ? coastFollowSlope(x) + k*(0.5*(ridgeLineZ(x+1) - ridgeLineZ(x-1)) - coastFollowSlope(x)) : coastFollowSlope(x); }
 // what the land is like at (x,z): 0 beach, 1 cliff face, 2 clifftop
 function terrainZone(x,z){
   const inland=z - COAST_Z - coastLine(x), [foot, W]=_cliff(x);
@@ -507,13 +599,13 @@ function terrainColor(x,z,h,rnd){
 function buildTerrain(){
   while(terrainGroup.children.length){ const c=terrainGroup.children.pop(); c.geometry&&c.geometry.dispose(); }
   const X0=-2*TERR_PERIOD, X1=2*TERR_PERIOD, dx=2.5, rnd=_hashRng(31337);
-  const zs=[]; for(let z=Z_NEAR; z<Z_FAR; z+= z<40 ? 2 : z<118 ? 1 : z<165 ? 2 : 8) zs.push(z); zs.push(Z_FAR);   // fine across the cliffs
+  const zs=[]; for(let z=Z_NEAR; z<Z_FAR; z+= z<40 ? 2 : z<118 ? 1 : z<165 ? 2 : z<260 ? 8 : 14) zs.push(z); zs.push(Z_FAR);   // fine across the cliffs
   const P=[], C=[];
-  const vert=(x,z)=>{ const h=terrainH(x,z); P.push(x,h,z); const c=terrainColor(x,z,h,rnd); C.push(c.r,c.g,c.b); };
+  const vert=(x,z,k)=>{ const h=terrainH(x,z); P.push(x,h,z); const c=terrainColor(x,z,h,_tileRng(x,z,k)); C.push(c.r,c.g,c.b); };
   for(let x=X0;x<X1;x+=dx){
     for(let k=0;k+1<zs.length;k++){ const z=zs[k], z2=zs[k+1];
-      vert(x,z); vert(x,z2); vert(x+dx,z2);          // two CCW tris per cell (normal up)
-      vert(x,z); vert(x+dx,z2); vert(x+dx,z);
+      vert(x,z,0); vert(x,z2,1); vert(x+dx,z2,2);    // two CCW tris per cell (normal up)
+      vert(x,z,3); vert(x+dx,z2,4); vert(x+dx,z,5);
     }
   }
   const g=new THREE.BufferGeometry();
@@ -527,15 +619,19 @@ function buildTerrain(){
   buildShoreTrees(xs);
   buildCoastExtras(xs);
   buildBeachgoers(xs);
+  buildSeaLife(xs); buildHangGliders(xs);
 }
 // A timber pier on pilings, within the same footprint the birds treat as an obstacle (JETTY_W wide,
 // deck at JETTY_TOP, JETTY_LEN out to sea): two rows of pilings with cap beams, stringers, a planked deck
 // and a railing down each side.
 const _hashRng=(a)=>()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; };
+// a generator keyed to a spot on the coast (x taken modulo the tile), so every tile gets the same numbers at the
+// same spot and the coast looks identical after it re-centres on the camera
+const _tileRng=(x,z,k)=>_hashRng(Math.imul(Math.round((((x%TERR_PERIOD)+TERR_PERIOD)%TERR_PERIOD)*8), 73856093) ^ Math.imul(Math.round(z*8), 19349663) ^ Math.imul(k|0, 83492791));
 function _instanced(geo, mat, list, rnd, tint){
   const m=new THREE.InstancedMesh(geo, mat, list.length), o=new THREE.Object3D(), c=new THREE.Color();
   list.forEach((it,i)=>{ o.position.set(it[0],it[1],it[2]); o.rotation.set(it[6]||0, it[7]||0, 0); o.scale.set(it[3],it[4],it[5]); o.updateMatrix(); m.setMatrixAt(i,o.matrix);
-    if(tint){ c.setHex(tint); c.offsetHSL(0, 0, (rnd()-0.5)*(it[8]||0.08)); if(it[9]) c.offsetHSL(it[9],0,0); m.setColorAt(i,c); } });
+    if(tint){ c.setHex(tint); c.offsetHSL(0, 0, (_tileRng(it[0],it[2],7)()-0.5)*(it[8]||0.08)); if(it[9]) c.offsetHSL(it[9],0,0); m.setColorAt(i,c); } });
   m.frustumCulled=false;                                   // instances spread far beyond the base geometry's bounds
   terrainGroup.add(m); return m;
 }
@@ -643,7 +739,7 @@ function buildCoastExtras(tileXs){
       t.position.set(x, terrainH(x,z)-0.1, z);
       t.rotation.y=-Math.atan(_tk*(10*Math.cos(_tk*x+0.6)+8*Math.cos(2*_tk*x+2.1)+10*Math.cos(4*_tk*x+0.4)+10.5*Math.cos(7*_tk*x+3.0)));   // square to the beach; window and porch face the sea (-z)
       terrainGroup.add(t); }
-    const r2=_hashRng(99+X);
+    const r2=_hashRng(99);                               // the same boats in every tile
     for(const [lx,z,ph] of bl){ const b=makeBoat(r2); b.position.set(X+lx, 0, z);
       b.userData.yaw=-Math.PI/2+(r2()-0.5)*0.9; b.userData.ph=ph*6.28; b.rotation.y=b.userData.yaw;      // bows roughly offshore-facing, swung by wind and tide
       terrainGroup.add(b); boats.push(b); }
@@ -673,7 +769,7 @@ function makePerson(rnd){                                // feet at the origin, 
   const hd=new THREE.Mesh(new THREE.SphereGeometry(0.115,10,8), _pm(skinC)); hd.position.set(0,hip+0.78*k,0); g.add(hd);
   const hair=new THREE.Mesh(new THREE.SphereGeometry(0.122,10,6,0,Math.PI*2,0,1.5), _pm(hairC)); hair.position.copy(hd.position); hair.rotation.z=0.35; g.add(hair);
   _pbox(0.1,0.14,0.15,skinC,0,hip+0.66*k,0,g);                                         // neck
-  return {g, legs, arms};
+  return {g, legs, arms, skin:_pm(skinC)};
 }
 function makeDog(rnd){                                   // facing +x; a medium dog, ~0.55 m at the shoulder
   const g=new THREE.Group(), c=[0x2a2018,0xc9a36a,0x7a4f2a,0xe8e0d0,0x4a4440][Math.floor(rnd()*5)], s=0.8+0.4*rnd();
@@ -686,7 +782,7 @@ function makeDog(rnd){                                   // facing +x; a medium 
   return {g, legs, tail};
 }
 function buildBeachgoers(tileXs){
-  for(const X of tileXs){ const rnd=_hashRng(2024+X);
+  for(const X of tileXs){ const rnd=_hashRng(2024);      // the same people in every tile
     const segs=[[10,135],[168,250],[280,350],[20,120],[175,340]];                    // walks that keep clear of the pier
     for(let k=0;k<6;k++){ const p=makePerson(rnd), sg=segs[k%segs.length], walk=k<4, dog=walk && rnd()<0.6;
       const b={p, X, a:sg[0], b:sg[1], walk, v:1.0+0.5*rnd(), ph:rnd()*500, inl:walk ? 3.5+3*rnd() : 6+5*rnd(),
@@ -695,9 +791,198 @@ function buildBeachgoers(tileXs){
       terrainGroup.add(p.g); beachgoers.push(b); }
   }
 }
+// Surfers, dolphins and a grey whale beyond the waves (v28). Like the people, the same in every tile, built from
+// fixed hashes and moved by the clock alone. They ride the same swell the sea shader draws (waveHJS, in WORLD x).
+const surfers=[], pods=[], whales=[], gliders=[];
+function makeSurfer(rnd){
+  const p=makePerson(rnd), suit=_pm(0x16181a);              // black wetsuits: everything but the face and hands
+  p.g.traverse(o=>{ if(o.material && o.material!==p.skin) o.material=suit; });
+  const board=new THREE.Group(), bc=[0xf4f1e6,0xf4f1e6,0xe8b23a,0x8fc8de,0xd9382c][Math.floor(rnd()*5)];
+  _pbox(2.1,0.07,0.52,bc,0,0,0,board); _pbox(0.5,0.071,0.36,bc,1.15,0,0,board);   // board and its narrower nose
+  const g=new THREE.Group(); g.add(board); g.add(p.g); return {g, board, p};
+}
+function makeDolphin(){
+  const g=new THREE.Group(), c=0x59646e;
+  const body=new THREE.Mesh(new THREE.SphereGeometry(1,12,8), _pm(c)); body.scale.set(1.05,0.25,0.26); g.add(body);
+  const belly=new THREE.Mesh(new THREE.SphereGeometry(1,10,6), _pm(0xb9c0c4)); belly.scale.set(0.8,0.17,0.2); belly.position.set(0.05,-0.08,0); g.add(belly);
+  _pbox(0.3,0.07,0.08,c,1.1,-0.03,0,g);                                                // beak
+  const fin=new THREE.Mesh(new THREE.ConeGeometry(0.16,0.32,4), _pm(c)); fin.scale.set(1.3,1,0.3); fin.position.set(-0.05,0.33,0); fin.rotation.z=0.45; g.add(fin);
+  _pbox(0.2,0.04,0.6,c,-1.15,0,0,g);                                                   // flukes
+  return g;
+}
+function makeWhale(){
+  const g=new THREE.Group(), c=0x4a535b, body=new THREE.Group(); g.add(body);
+  const b=new THREE.Mesh(new THREE.SphereGeometry(1,16,10), _pm(c)); b.scale.set(6.5,1.3,1.6); body.add(b);
+  for(let k=0;k<6;k++){ const m=new THREE.Mesh(new THREE.SphereGeometry(0.28,6,4), _pm(0xb4b6b2)); m.scale.set(1.4,0.4,1); m.position.set(3-1.6*k, 1.15-0.02*k*k, (k%2?0.5:-0.4)); body.add(m); }   // barnacle patches
+  const stock=new THREE.Mesh(new THREE.SphereGeometry(1,10,6), _pm(c)); stock.scale.set(2.6,0.55,0.6); stock.position.set(-7.4,0.1,0); body.add(stock);
+  const fluke=new THREE.Shape(); fluke.moveTo(0,0); fluke.quadraticCurveTo(-0.6,1.6,-1.6,2.3); fluke.quadraticCurveTo(-1.2,1.0,-1.5,0);
+  fluke.quadraticCurveTo(-1.2,-1.0,-1.6,-2.3); fluke.quadraticCurveTo(-0.6,-1.6,0,0);
+  const fg=new THREE.ShapeGeometry(fluke); fg.rotateX(Math.PI/2);
+  const fm=new THREE.Mesh(fg, new THREE.MeshStandardMaterial({color:c, roughness:0.9, side:THREE.DoubleSide})); fm.position.set(-9.6,0.1,0); body.add(fm);
+  // the blow: a soft, misty column (a sprite; marked as already faded, since the distance fade is for lit meshes)
+  const sc=document.createElement('canvas'); sc.width=32; sc.height=64; const cx=sc.getContext('2d');
+  for(let k=0;k<6;k++){ const y=58-k*9, r=7+k*2.2, gr=cx.createRadialGradient(16,y,0,16,y,r);
+    gr.addColorStop(0,'rgba(255,255,255,0.75)'); gr.addColorStop(1,'rgba(255,255,255,0)'); cx.fillStyle=gr; cx.fillRect(0,0,32,64); }
+  const sm=new THREE.SpriteMaterial({map:new THREE.CanvasTexture(sc), transparent:true, opacity:0, depthWrite:false}); sm.userData.fade=true;
+  const spout=new THREE.Sprite(sm); spout.center.set(0.5,0); spout.position.set(3.4,0.6,0); g.add(spout);
+  return {g, body, spout};
+}
+function buildSeaLife(tileXs){
+  for(const X of tileXs){
+    let rnd=_hashRng(7071);
+    for(const [lx0,n] of [[232,4],[38,2]]) for(let k=0;k<n;k++){
+      const s=makeSurfer(rnd); s.X=X; s.lx=lx0+k*7+rnd()*4; s.ds=40+rnd()*6; s.T=55+20*rnd(); s.ph=rnd()*s.T; s.dir=rnd()<0.5?1:-1;
+      terrainGroup.add(s.g); surfers.push(s); }
+    rnd=_hashRng(8088);
+    const pod={X, lx:rnd()*TERR_PERIOD, ds:75+15*rnd(), v:4.5, d:[]};
+    for(let k=0;k<4;k++){ const g=makeDolphin(); pod.d.push({g, off:[-3.5*k+rnd(), (rnd()-0.5)*4], ph:rnd()*6.28}); terrainGroup.add(g); }
+    pods.push(pod);
+    const w=makeWhale(); w.X=X; w.lx=rnd()*TERR_PERIOD; w.ds=190+40*rnd(); w.ph=rnd()*100; terrainGroup.add(w.g); whales.push(w);
+  }
+}
+// HANG GLIDERS (v29): Fort Funston is a hang-gliding site -- with the sea breeze up, a couple of them beat back
+// and forth along the cliff edge in the ridge lift, turning out to sea at each end of their beat.
+function makeHangGlider(c1, c2){
+  const g=new THREE.Group();
+  const sail=new THREE.BufferGeometry(), N=[1.7,0.05,0], L=[-1.0,-0.2,-5.0], R=[-1.0,-0.2,5.0], C=[-1.1,0.25,0];
+  sail.setAttribute('position', new THREE.Float32BufferAttribute([...N,...L,...C, ...N,...C,...R], 3)); sail.computeVertexNormals();
+  const sm=new THREE.MeshStandardMaterial({color:c1, roughness:0.6, side:THREE.DoubleSide});
+  g.add(new THREE.Mesh(sail, sm));
+  const band=new THREE.BufferGeometry(), f=0.55;          // a band of a second colour across the sail
+  const lerp=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+  const l1=lerp(N,L,f-0.12), l2=lerp(N,L,f+0.12), r1=lerp(N,R,f-0.12), r2=lerp(N,R,f+0.12);
+  band.setAttribute('position', new THREE.Float32BufferAttribute([...l1,...l2,...r2, ...l1,...r2,...r1].map((v,i)=>i%3===1?v+0.02:v), 3)); band.computeVertexNormals();
+  g.add(new THREE.Mesh(band, new THREE.MeshStandardMaterial({color:c2, roughness:0.6, side:THREE.DoubleSide})));
+  const keel=new THREE.Mesh(new THREE.BoxGeometry(2.9,0.06,0.06), _pm(0x9aa0a6)); keel.position.set(0.25,0.06,0); g.add(keel);
+  const pilot=new THREE.Mesh(new THREE.SphereGeometry(1,10,6), _pm(0x2a3140));   // the pilot, prone in a harness
+  pilot.scale.set(0.95,0.22,0.24); pilot.position.set(-0.1,-1.25,0); g.add(pilot);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6), _pm(0xd9d2c2)); head.position.set(0.85,-1.18,0); g.add(head);
+  const fr=new THREE.BufferGeometry();                   // the A-frame and control bar, and the hang strap
+  fr.setAttribute('position', new THREE.Float32BufferAttribute([0.3,0.05,0, 0.6,-1.5,-0.7,  0.3,0.05,0, 0.6,-1.5,0.7,  0.6,-1.5,-0.7, 0.6,-1.5,0.7,
+                                                                -0.1,0.05,0, -0.1,-1.05,0], 3));
+  g.add(new THREE.LineSegments(fr, new THREE.LineBasicMaterial({color:0x50565c})));
+  g.rotation.order='YXZ';
+  return g;
+}
+// Each hang glider is FLOWN, not traced: a glider in the same ridge lift the pelicans soar (ridgeLift), sinking
+// ~1 m/s through the air and carried up by the rising air along the cliff edge, so it finds its own height. Its
+// pilot holds a lane just seaward of the (smoothed) cliff edge with gentle banked corrections, flies a long beat,
+// and now and then makes a U-turn -- always out to sea, away from the cliff -- to work back the other way. One
+// flight per glider is simulated in tile coordinates (the coast repeats every TERR_PERIOD) and drawn in every tile.
+const gliderFlights=[], HG={kx:0.02, kb:1.0, roll:0.8, beat0:500, beat1:700};
+function buildHangGliders(tileXs){
+  const looks=[[0xe8452c,0xf5d142],[0x2f6fd6,0xf2f2ee]];
+  if(!gliderFlights.length){ const rnd=_hashRng(4242);
+    looks.forEach((c,k)=>{ const x=60+170*k;
+      gliderFlights.push({x, z:ridgeLineZ(x)-4-5*k, y:_cliffH0(x)+30, hdg:k?Math.PI:0, dir:k?-1:1, bank:0, v:10.5,
+        lane:-3-6*rnd(), beat:500+700*rnd(), run:0, turning:0, rnd}); }); }
+  for(const X of tileXs) looks.forEach((c,k)=>{ const g=makeHangGlider(c[0],c[1]); gliders.push({g, X, k}); terrainGroup.add(g); });
+}
+let _hgT=null;
+// the pilot's line: the cliff edge smoothed over ~80 m (a glider doesn't trace every cove and point)
+function hgLineZ(x){ let z=0; for(let d=-40; d<=40; d+=10) z+=ridgeLineZ(x+d); return z/9; }
+function flyHangGlider(f, dt){
+  const G=9.81, wr=v=>((v%TERR_PERIOD)+TERR_PERIOD)%TERR_PERIOD;
+  const slope=0.1*(hgLineZ(f.x+5)-hgLineZ(f.x-5)), along=Math.atan2(slope*f.dir, f.dir);   // the cliff's direction, my way
+  let want;
+  if(f.turning){                                    // U-turn: a steady banked turn toward the sea until heading back along
+    want = f.hdg + f.turning*1.0;
+    if(Math.abs(wrapPi(along - f.hdg)) < 0.35) f.turning=0;
+  } else {
+    const xt = (hgLineZ(f.x) + f.lane) - f.z;    // >0: the lane is inland of me
+    want = along + clamp(HG.kx*xt*f.dir, -0.45, 0.45);
+    f.run += f.v*dt;
+    if(f.run > f.beat){ f.run=0; f.beat=HG.beat0+HG.beat1*f.rnd(); f.dir=-f.dir; f.lane=-3-6*f.rnd();
+      f.turning = f.dir<0 ? -1 : 1; }               // (always out to sea, -z: from heading +x the heading angle falls, from -x it rises)
+  }
+  const bankCmd = f.turning ? f.turning*0.55 : clamp(HG.kb*wrapPi(want - f.hdg), -0.45, 0.45);
+  f.bank += clamp(bankCmd - f.bank, -HG.roll*dt, HG.roll*dt);          // a big wing rolls slowly
+  f.hdg += G*Math.tan(f.bank)/f.v*dt;              // coordinated turn
+  f.x += Math.cos(f.hdg)*f.v*dt; f.z += Math.sin(f.hdg)*f.v*dt;
+  const sink = 0.95/Math.pow(Math.cos(f.bank), 1.5);
+  const ground = terrainH(f.x, f.z);
+  f.vy = ridgeLift(f.x, f.y, f.z) - sink;
+  f.y = Math.max(f.y + f.vy*dt, Math.max(0, ground) + 12);       // (no landings: a pilot short of lift would head out and land; ours keep flying)
+  f.x = wr(f.x);
+}
+function updateHangGliders(t){
+  const on=(P.ridgeWind||0)>2;
+  const dt = _hgT==null ? 0 : clamp(t-_hgT, 0, 0.1); _hgT=t;
+  if(on) for(let i=0;i<4 && dt>0;i++) for(const f of gliderFlights) flyHangGlider(f, dt/4);
+  for(const gl of gliders){
+    if(!on){ gl.g.visible=false; continue; }
+    const f=gliderFlights[gl.k];
+    gl.g.position.set(gl.X + f.x, f.y, f.z);
+    gl.g.visible=_comeGo(gl.g, _dayOut(gl.g, sky.rain>0.15 || sky.fog>0.55), 7);
+    // heading angle a in x-z (x=cos a, z=sin a): three.js yaw about +y turns +x toward -z, so yaw = -a
+    gl.g.rotation.y = -f.hdg;
+    gl.g.rotation.x = f.bank;                        // roll into the turn
+    gl.g.rotation.z = -0.05 + 0.04*clamp(f.vy||0, -2, 2);
+  }
+}
+const _seaZ=(x,ds)=>COAST_Z+coastLine(x)-ds;
+// DAY PEOPLE (v29): the walkers, dogs, surfers, hang gliders, dolphins and whale are about by day only (the walkers
+// and the gliders also stay home in rain, the gliders in thick fog), each with its own hours. They never pop in
+// or out in front of you: one only arrives or leaves while it's out of the camera's view or far off.
+const _frus=new THREE.Frustum(), _frusM=new THREE.Matrix4(), _psph=new THREE.Sphere(), _pv=V3();
+function _stageFrame(){ camera.updateMatrixWorld(); _frusM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frus.setFromProjectionMatrix(_frusM); }
+const _jit=o=>((o.id*0.6180339887)%1);                   // each its own hours
+const _dayOut=(o, extra)=>sky.day > 0.15+0.7*_jit(o) && !extra;
+function _comeGo(o, want, r){
+  const u=o.userData;
+  if(u.here===undefined) u.here=want;
+  else if(u.here!==want){ o.getWorldPosition(_pv); _psph.set(_pv, r||3);
+    if(!_frus.intersectsSphere(_psph) || _pv.distanceTo(camera.position)>330) u.here=want; }
+  return u.here;
+}
+function updateSeaLife(t){
+  const gx=terrainGroup.position.x, wrap=v=>((v%TERR_PERIOD)+TERR_PERIOD)%TERR_PERIOD;
+  for(const s of surfers){
+    const u=((t+s.ph)%s.T+s.T)%s.T, W=s.T-30;                // 0-W: wait in the lineup; then paddle in, ride, paddle back
+    let x=s.lx, ds=s.ds, pose='sit', yaw=Math.PI/2 + 0.4*Math.sin(t*0.05+s.ph);            // sitting, facing out to sea
+    if(u>W && u<W+3){ const v=(u-W)/3; ds=s.ds-3*v; pose='prone'; yaw=-Math.PI/2; }
+    else if(u>=W+3 && u<W+11){ const v=(u-W-3)/8; ds=s.ds-3-25*v; x=s.lx+s.dir*22*v; pose='ride'; yaw=-Math.PI/2+s.dir*0.75; }
+    else if(u>=W+11){ const v=(u-W-11)/(s.T-W-11); ds=s.ds-28+28*Math.min(1,v*1.15); x=s.lx+s.dir*22*(1-v); pose='prone';
+      yaw=Math.PI/2-s.dir*0.3*(1-v); }
+    const px=s.X+x, z=_seaZ(px,ds), h=waveHJS(px+gx, z);
+    s.g.position.set(px, h+0.03, z);
+    if(!(s.g.visible=_comeGo(s.g, _dayOut(s.g), 3))) continue; s.g.rotation.set(0, yaw, pose==='ride' ? 0.06*Math.sin(t*1.7) : 0.04*Math.sin(t*1.1+s.ph));
+    const P_=s.p, pg=P_.g, sw=Math.sin(t*3.2+s.ph);
+    pg.rotation.set(0,0,0); P_.legs.forEach(l=>l.rotation.set(0,0,0)); P_.arms.forEach(a=>a.rotation.set(0,0,0));
+    if(pose==='sit'){ pg.position.set(-0.15,-0.92,0); }      // straddling the board, legs down in the water
+    else if(pose==='prone'){ pg.rotation.z=-Math.PI/2; pg.position.set(-0.9,0.17,0);
+      P_.arms[0].rotation.z=2.2+1.2*sw; P_.arms[1].rotation.z=2.2-1.2*sw; }
+    else { pg.position.set(0,0.04,0); pg.rotation.y=s.dir>0 ? -Math.PI/2 : Math.PI/2;   // standing side-on, knees bent, arms out
+      P_.legs[0].rotation.z=0.35; P_.legs[1].rotation.z=-0.35; P_.arms[0].rotation.x=-1.1+0.2*sw; P_.arms[1].rotation.x=1.1-0.2*sw; pg.position.y=-0.08; }
+  }
+  for(const pod of pods){
+    const on=Math.sin(t*0.045+pod.lx)>-0.2;                   // they spend a while down, out of sight
+    const cx=wrap(pod.lx+pod.v*t);
+    for(const d of pod.d){ const lx=wrap(cx+d.off[0]), px=pod.X+lx, z=_seaZ(px, pod.ds+d.off[1]);
+      const a=t*2.4+d.ph, y=on ? 1.05*Math.sin(a)-0.35 : -3, pitch=on ? Math.atan2(1.05*2.4*Math.cos(a), pod.v)*0.9 : 0;
+      d.g.position.set(px, y, z); d.g.rotation.set(0, -0.08, pitch); d.g.visible = _comeGo(d.g, _dayOut(pod.d[0].g), 3) && y>-1.6; }
+  }
+  for(const w of whales){
+    const T=50, n=Math.floor((t+w.ph)/T), u=((t+w.ph)%T)/T*T, px=w.X+wrap(w.lx+1.2*t), z=_seaZ(px, w.ds);
+    w.g.position.set(px, 0, z); const B=w.body;
+    let y=-6, pitch=0;
+    if(u<12){ const v=u/12, deep=(n%2===0);                    // surface: a slow roll forward, then down again
+      y=-1.6+1.25*Math.sin(Math.PI*Math.min(1,v*1.25));
+      pitch=deep && v>0.6 ? -1.25*((v-0.6)/0.4)**1.3 : 0.12-0.24*v;
+      if(deep && v>0.6) y=-1.6+1.25*Math.sin(Math.PI*0.75)-4.5*((v-0.6)/0.4)**2+ 3.0*((v-0.6)/0.4);   // tail rises as it sounds
+    }
+    const here=_comeGo(w.g, _dayOut(w.g), 14);
+    B.position.y=y; B.rotation.z=pitch; w.g.visible = here && u<13;
+    const sp=u<3.2 ? Math.sin(Math.PI*u/3.2) : 0;               // the blow
+    w.spout.material.opacity=0.9*sp; w.spout.scale.set(1.6+1.6*u/3.2, 0.8+3.6*Math.min(1,u/1.0), 1);   // shoots up ~4 m, then spreads and drifts off
+    w.spout.visible=here && sp>0.01; w.spout.renderOrder=1;                 // (after the sea: it writes no depth, so the sea would paint over it)
+  }
+}
 function _onBeach(o, x, inl, yaw){ const z=COAST_Z+coastLine(x)+inl; o.position.set(x, terrainH(x,z), z); o.rotation.y=yaw; }
 function updateBeachgoers(t){
   for(const b of beachgoers){ const P_=b.p;
+    const here=_comeGo(P_.g, _dayOut(P_.g, sky.rain>0.3), 3);
+    P_.g.visible=here; if(b.dog) b.dog.g.visible=here;
     if(!b.walk){ _onBeach(P_.g, b.X+b.lx, b.inl, Math.PI/2+b.face+0.25*Math.sin(t*0.07+b.ph));   // gazing out to sea (-z)
       P_.arms[0].rotation.z=P_.arms[1].rotation.z=0; continue; }
     const L=b.b-b.a, u=((b.v*t+b.ph)%(2*L)+2*L)%(2*L), out=u<L, s=out ? u : 2*L-u, dir=out ? 1 : -1, x=b.X+b.a+s;
@@ -712,23 +997,193 @@ function updateBeachgoers(t){
   }
 }
 buildTerrain();
+// Distance fade for the coast (v28). The coast is one 4-tile strip re-centred on the camera 360 m at a time, so
+// its far end (never nearer than 540 m) jumps whenever the camera crosses a tile boundary. Fog alone left the far
+// bluffs as pale fog-coloured shapes against a sky of another colour, so they popped in and out. Instead
+// everything on the coast fades out by horizontal distance from the camera, 330-520 m, into whatever is
+// really behind it (sky, sea), well before any edge.
+const COAST_FADE=[330, 520];
+function fadeWithDistance(mat){
+  if(mat.userData.fade) return; mat.userData.fade=true; mat.transparent=true;
+  mat.onBeforeCompile=sh=>{
+    sh.vertexShader=sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vFadeW;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+  vec4 fw=vec4(transformed,1.0);
+  #ifdef USE_INSTANCING
+  fw=instanceMatrix*fw;
+  #endif
+  vFadeW=(modelMatrix*fw).xyz;`);
+    sh.fragmentShader=sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vFadeW;')
+      .replace('#include <fog_fragment>', `#include <fog_fragment>
+  gl_FragColor.a*=1.0-smoothstep(${COAST_FADE[0].toFixed(1)}, ${COAST_FADE[1].toFixed(1)}, length(vFadeW.xz-cameraPosition.xz));`);
+  };
+  mat.needsUpdate=true;
+}
+// (fading makes them transparent, and the sea is transparent too (renderOrder -2): draw the coast before it)
+terrainGroup.traverse(o=>{ if(o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(fadeWithDistance); o.renderOrder=-3; } });
 
 // sky dome: a gradient with the sun in it (disc, glare and a warm glow around it). Drawn first and
 // without depth, so the clouds beyond its radius still show.
 const skyGeo = new THREE.SphereGeometry(1000,32,20);
 const skyMat = new THREE.ShaderMaterial({
   side:THREE.BackSide, depthWrite:false,
-  uniforms:{top:{value:new THREE.Color(0x2b5a8c)}, bot:{value:new THREE.Color(0xbfe0f2)}, sunDir:{value:SUN_DIR}},
+  uniforms:{top:{value:new THREE.Color(0x2b5a8c)}, bot:{value:new THREE.Color(0xbfe0f2)}, sunDir:{value:SUN_DIR},
+            glow:{value:new THREE.Color(1.0,0.9,0.7)}, sunVis:{value:1}, stars:{value:0}, haze:{value:0}, hazeCol:{value:new THREE.Color(0xbfc8cf)}},
   vertexShader:`varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-  fragmentShader:`varying vec3 vD; uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir;
+  fragmentShader:`varying vec3 vD; uniform vec3 top, bot, sunDir, glow, hazeCol; uniform float sunVis, stars, haze;
+    float h3(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453); }
     void main(){ vec3 d=normalize(vD); float t=clamp(d.y*0.5+0.5,0.0,1.0);
       vec3 col=mix(bot,top,pow(t,0.8));
       float c=max(dot(d,sunDir),0.0);
-      col += vec3(1.0,0.9,0.7)*(0.22*pow(c,8.0) + 0.45*pow(c,90.0) + 0.6*pow(c,900.0));   // glow and glare
-      col = mix(col, vec3(1.0,0.99,0.93), smoothstep(0.99955,0.9998,c));                    // the disc
+      col += glow*(0.30*pow(c,6.0)*(1.0-0.5*clamp(d.y*3.0,0.0,1.0)) + 0.45*pow(c,90.0)*sunVis + 0.6*pow(c,900.0)*sunVis);   // glow and glare
+      col = mix(col, vec3(1.0,0.99,0.93)*mix(vec3(1.0), glow, 0.6), smoothstep(0.99955,0.9998,c)*sunVis);   // the disc
+      if(stars>0.0){ vec3 q=floor(d*260.0); float s=step(0.9975,h3(q))*(0.5+0.5*h3(q+7.0));
+        col += vec3(0.9,0.93,1.0)*s*stars*smoothstep(0.02,0.25,d.y);
+        float m=max(dot(d, normalize(vec3(-sunDir.x, abs(sunDir.y)+0.35, -sunDir.z))),0.0);   // the moon, across the sky from the sun
+        col += vec3(0.85,0.88,0.95)*stars*(smoothstep(0.99935,0.9996,m) + 0.10*pow(m,60.0)); }
+      col = mix(col, hazeCol, haze*(1.0-0.55*smoothstep(0.0,0.6,d.y)));        // fog and overcast
       gl_FragColor=vec4(col,1.0); }`
 });
 const skyMesh = new THREE.Mesh(skyGeo, skyMat); skyMesh.renderOrder=-10; scene.add(skyMesh);
+
+// DAY AND WEATHER (v29). The sun rises over the hills behind the bluffs (+z is east), crosses the southern sky (+x)
+// and sets out over the sea; the night goes by three times faster than the day, under stars and a moon. Along the
+// coast the marine layer comes and goes -- fog more often in the morning and evening, as on the real SF coast -- and
+// so do thicker clouds. It's all looks: nothing here touches the flight.
+const sky = { hours:8.0, t:0, fog:0, cloud:0.3, rain:0, shade:1, day:1, dir:SUN_DIR.clone(), kind:'clear', left:150, fogT:0, cloudT:0.3, rainT:0, rnd:_hashRng(3131),
+  cloudTop:new THREE.Color(0xffffff), cloudBot:new THREE.Color(0xc9d3de), _last:0 };
+const _sc=(h)=>new THREE.Color(h), SKYC={ topDay:_sc(0x2b5a8c), topNight:_sc(0x0c1834), topGold:_sc(0x41507e),
+  botDay:_sc(0xbfe0f2), botNight:_sc(0x24365a), botGold:_sc(0xf0a070), grey:_sc(0xbcc6cd),
+  hemiDay:_sc(0xcfe8ff), hemiNight:_sc(0x6a7fae), gndDay:_sc(0x24405a), gndNight:_sc(0x1a2440), moon:_sc(0xa9bde6),
+  sunDay:_sc(0xfff6e8), sunGold:_sc(0xffa860), cTopNight:_sc(0x1c2233), cBotDay:_sc(0xc9d3de), cBotNight:_sc(0x10141f),
+  cGold:_sc(0xffbf95), white:_sc(0xffffff) };
+const _sk1=new THREE.Color(), _sk2=new THREE.Color(), _sk3=new THREE.Color();
+function sunAt(hours, out){
+  const phi=37.7*DEG, dec=12*DEG, h=(hours-13.2)/24*2*Math.PI;   // (summer time, west of the zone's meridian: sunrise ~6:20, sunset ~8:00 pm)
+  const up=Math.sin(phi)*Math.sin(dec)+Math.cos(phi)*Math.cos(dec)*Math.cos(h);
+  const east=-Math.cos(dec)*Math.sin(h), north=Math.cos(phi)*Math.sin(dec)-Math.sin(phi)*Math.cos(dec)*Math.cos(h);
+  return out.set(-north, up, east).normalize();
+}
+function advanceSky(dt){                                   // (sim time: it stops when paused)
+  sky.t += dt;
+  if(P.dayCycle){
+    const e=sunAt(sky.hours, _skV).y, night=1+2*clamp((0.02-e)/0.15, 0, 1);
+    sky.hours = (sky.hours + dt*night*16.7/(Math.max(1,P.dayMinutes)*60)) % 24;
+  }
+  // the weather is a spell of one kind -- clear (now and then a few clouds), coastal fog, a grey overcast, or, rarely,
+  // rain -- lasting a few minutes, then another; each eases into the next over a minute or so
+  sky.left -= dt;
+  if(sky.left<=0){ const H=sky.hours, w=clamp(P.weather||0, 0, 1), r=sky.rnd();
+    const mb=Math.exp(-Math.pow((H-7)/2.5,2)) + Math.exp(-Math.pow((H-20.5)/3,2));      // fog likes the morning and evening
+    const pFog=w*(0.22+0.3*mb), pOver=w*0.2, pRain=w*0.05;
+    sky.kind = r<pRain ? 'rain' : r<pRain+pFog ? 'fog' : r<pRain+pFog+pOver ? 'overcast' : 'clear';
+    const q=sky.rnd();
+    [sky.fogT, sky.cloudT, sky.rainT] = sky.kind==='rain' ? [0.25, 1, 1] : sky.kind==='fog' ? [0.6+0.35*q, 0.3, 0]
+                                      : sky.kind==='overcast' ? [0.1*q, 0.85+0.15*q, 0] : [0, 0.12+0.4*q*w, 0];
+    sky.left = (sky.kind==='rain' ? 70 : 110) + 160*sky.rnd();
+  }
+  const k=1-Math.exp(-dt/20), kr=1-Math.exp(-dt/(sky.rainT>sky.rain ? 30 : 12));
+  sky.fog+=(sky.fogT-sky.fog)*k; sky.cloud+=(sky.cloudT-sky.cloud)*k;
+  sky.rain+=((sky.cloud>0.8 ? sky.rainT : 0)-sky.rain)*kr;                  // (the rain waits for the cloud to close in)
+}
+const _skV=V3(), _sst2=(a,b,v)=>{ const u=clamp((v-a)/(b-a),0,1); return u*u*(3-2*u); };
+function updateSky(){
+  if(P.dayCycle) sunAt(sky.hours, sky.dir); else sky.dir.copy(SUN_DIR);
+  const d=sky.dir, e=d.y, o=Math.min(1, Math.max(sky.fog, 0.85*sky.cloud) + 0.12*sky.rain);
+  const D=_sst2(-0.08,0.25,e); sky.day=P.dayCycle ? _sst2(-0.06,0.06,e) : 1; const G=Math.exp(-Math.pow((e-0.04)/0.11,2))*(1-0.7*o), N=1-_sst2(-0.2,0,e), L=0.32+0.68*D;   // (a moonlit night: dim, but you can still watch them)
+  // the sky: day blue -> warm at the horizon around sunrise/sunset -> deep blue night
+  const top=skyMat.uniforms.top.value, bot=skyMat.uniforms.bot.value;
+  top.copy(SKYC.topNight).lerp(SKYC.topDay, D).lerp(SKYC.topGold, 0.45*G);
+  bot.copy(SKYC.botNight).lerp(SKYC.botDay, D).lerp(SKYC.botGold, 0.75*G);
+  const ov=_sst2(0.35,0.95,sky.cloud)*(0.85+0.15*sky.rain);                  // a grey lid: the blue goes out of the sky
+  _sk2.copy(SKYC.grey).multiplyScalar(L*(0.82-0.12*sky.rain)); top.lerp(_sk2, 0.85*ov); bot.lerp(_sk2, 0.8*ov);
+  skyMat.uniforms.sunDir.value.copy(d);
+  skyMat.uniforms.glow.value.setRGB(1, 0.9-0.35*G, 0.7-0.45*G).multiplyScalar(_sst2(-0.15,0.0,e));
+  skyMat.uniforms.sunVis.value=_sst2(-0.03,0.01,e)*(1-0.9*o);
+  skyMat.uniforms.stars.value=N*(1-0.9*sky.fog)*(1-0.6*sky.cloud);
+  const haze=skyMat.uniforms.hazeCol.value.copy(SKYC.grey).multiplyScalar(L).lerp(SKYC.botGold, 0.25*G);
+  skyMat.uniforms.haze.value=Math.min(0.95, 0.9*sky.fog+0.75*sky.cloud*sky.cloud);
+  // the lights
+  const sunK=_sst2(-0.01,0.18,e);
+  if(sunK>0.001 || !P.dayCycle){ sun.position.copy(d).multiplyScalar(100);
+    sun.intensity=1.15*sunK*(1-0.75*o); sun.color.copy(SKYC.sunDay).lerp(SKYC.sunGold, G); }
+  else { sun.position.set(-d.x, Math.abs(d.y)+0.35, -d.z).normalize().multiplyScalar(100);   // by night, the moon
+    sun.intensity=0.45*N*(1-0.8*o); sun.color.copy(SKYC.moon); }
+  hemi.intensity=(0.5+0.45*D)*(1+0.1*o);
+  hemi.color.copy(SKYC.hemiNight).lerp(SKYC.hemiDay, D).lerp(SKYC.grey, 0.6*ov); hemi.groundColor.copy(SKYC.gndNight).lerp(SKYC.gndDay, D);
+  // the fog (and the background behind it) is the colour of the horizon, greyer and closer when the marine layer is in
+  _sk1.copy(bot).lerp(haze, Math.min(1, 1.1*sky.fog+0.25*sky.cloud));
+  scene.fog.color.copy(_sk1); scene.background.copy(_sk1);
+  scene.fog.near=90-65*sky.fog; scene.fog.far=470-320*sky.fog;
+  // the sea
+  waterMat.uniforms.uSun.value.set(d.x, Math.max(d.y,0.05), d.z).normalize();
+  waterMat.uniforms.uTint.value.set(L*(1-0.12*G)*(1-0.2*o)+0.12*G, L*(1-0.25*G)*(1-0.24*o)+0.04*G, L*(1-0.35*G)*(1-0.32*o));   // (greyer, less blue, under cloud)
+  waterMat.uniforms.uHaze.value.set(_sk1.r, _sk1.g, _sk1.b);
+  // clouds lit by the hour, greyer when it's overcast
+  sky.cloudTop.copy(SKYC.cTopNight).lerp(SKYC.white, D).lerp(SKYC.cGold, 0.7*G).multiplyScalar(1-0.3*o);
+  sky.cloudBot.copy(SKYC.cBotNight).lerp(SKYC.cBotDay, D).lerp(SKYC.cGold, 0.4*G).multiplyScalar(1-0.35*o);
+  sky.shade=_sst2(0.0,0.2,e)*(1-0.85*o);
+  updateRain(d.y);
+  updateWeatherIcon();
+  try{ setShadowSun(d); }catch(err){}
+}
+function skyTag(){
+  if(!P.dayCycle && !(P.weather>0)) return '';
+  const H=sky.hours, hh=Math.floor(H), mm=Math.floor((H-hh)*60), e=sky.dir.y;
+  const when = e<-0.1 ? 'night' : e<0.02 ? (H<12 ? 'dawn' : 'dusk') : e<0.2 ? (H<12 ? 'early morning' : 'evening') : H<11 ? 'morning' : H<14.5 ? 'midday' : 'afternoon';
+  const w = sky.rain>0.35 ? 'rain' : sky.fog>0.6 ? 'thick fog' : sky.fog>0.3 ? 'fog along the coast' : sky.cloud>0.6 ? 'overcast' : sky.cloud>0.35 ? 'some cloud' : (e>0.02 ? 'sunny' : 'clear');
+  return '<span style="color:#cfd8e6">'+(P.dayCycle ? hh+':'+String(mm).padStart(2,'0')+' '+when+', ' : '')+w+'.</span> ';
+}
+
+// RAIN (v29, rare): streaks falling round the camera, slanting with the sea breeze; drawn only while it rains.
+const RAIN_N=1400, RAIN_BOX=[60, 40, 60];
+const rainGeo=new THREE.BufferGeometry(), _rainP=new Float32Array(RAIN_N*6), _rainS=new Float32Array(RAIN_N*3);
+{ const r=_hashRng(777); for(let i=0;i<RAIN_N;i++){ _rainS[i*3]=(r()-0.5)*RAIN_BOX[0]; _rainS[i*3+1]=r()*RAIN_BOX[1]; _rainS[i*3+2]=(r()-0.5)*RAIN_BOX[2]; } }
+rainGeo.setAttribute('position', new THREE.BufferAttribute(_rainP, 3));
+const rainMat=new THREE.LineBasicMaterial({color:0xc4ccd6, transparent:true, opacity:0, depthWrite:false, fog:true});
+const rainMesh=new THREE.LineSegments(rainGeo, rainMat); rainMesh.frustumCulled=false; rainMesh.visible=false; scene.add(rainMesh);
+let _rainLast=0;
+function updateRain(sunY){
+  const now=performance.now(), dt=clamp((now-_rainLast)/1000, 0, 0.1); _rainLast=now;
+  rainMesh.visible=sky.rain>0.02; if(!rainMesh.visible) return;
+  rainMat.opacity=0.38*sky.rain*(0.45+0.55*_sst2(-0.1,0.1,sunY));
+  const c=camera.position, wx=-0.35*(P.headwind||0), wz=0.35*(P.crosswind||0), vy=9, L=0.9;
+  for(let i=0;i<RAIN_N;i++){ const j=i*3;
+    _rainS[j]+=wx*dt; _rainS[j+1]-=vy*dt; _rainS[j+2]+=wz*dt;
+    if(_rainS[j+1]<0) _rainS[j+1]+=RAIN_BOX[1];
+    const x=c.x+_wrapB(_rainS[j]-c.x, RAIN_BOX[0]), y=c.y-RAIN_BOX[1]/2+_rainS[j+1], z=c.z+_wrapB(_rainS[j+2]-c.z, RAIN_BOX[2]);
+    const k=i*6; _rainP[k]=x; _rainP[k+1]=y; _rainP[k+2]=z; _rainP[k+3]=x-wx/vy*L; _rainP[k+4]=y+L; _rainP[k+5]=z-wz/vy*L; }
+  rainGeo.attributes.position.needsUpdate=true;
+}
+const _wrapB=(v,B)=>v-B*Math.round(v/B);                 // (streaks wrap round the camera, so there are always some about)
+// The weather, at a glance (v29): a small icon in the top-right corner -- sun or moon, a few clouds, fog, overcast, rain.
+// It cross-fades when the weather turns.
+const _wxSvg={
+  sun:'<circle cx="12" cy="12" r="4.2" fill="#ffd36a"/><g stroke="#ffd36a" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></g>',
+  moon:'<path d="M15.5 3.5a8.5 8.5 0 1 0 5 13.6A7 7 0 0 1 15.5 3.5z" fill="#d6def0"/>',
+  cloud:(c,dy=0)=>'<path transform="translate(0 '+dy+')" d="M7 18.5h10.2a3.8 3.8 0 0 0 .5-7.6 5.3 5.3 0 0 0-10.2-1.2A4.4 4.4 0 0 0 7 18.5z" fill="'+c+'"/>',
+};
+const WX_ICON={
+  clear:  d=>d ? _wxSvg.sun : _wxSvg.moon,
+  some:   d=>'<g transform="translate(-3 -3) scale(.85)">'+(d ? _wxSvg.sun : _wxSvg.moon)+'</g>'+_wxSvg.cloud('#e8edf3',2),
+  overcast:()=>_wxSvg.cloud('#9aa6b2',-3)+_wxSvg.cloud('#c9d1da',1.5),
+  fog:    ()=>_wxSvg.cloud('#c9d1da',-4)+'<g stroke="#c9d1da" stroke-width="1.8" stroke-linecap="round"><path d="M4 17.5h16M6 20.5h12"/></g>',
+  rain:   ()=>_wxSvg.cloud('#aab4bf',-4)+'<g stroke="#7fb6ff" stroke-width="1.7" stroke-linecap="round"><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></g>',
+};
+const WX_NAME={clear:'Clear', some:'A few clouds', overcast:'Overcast', fog:'Fog along the coast', rain:'Rain'};
+let _wxKey='';
+function updateWeatherIcon(){
+  const el=document.getElementById('wxIcon'); if(!el) return;
+  const kind = sky.rain>0.35 ? 'rain' : sky.fog>0.4 ? 'fog' : sky.cloud>0.62 ? 'overcast' : sky.cloud>0.35 ? 'some' : 'clear';
+  const day = sky.dir.y>0.0 || !P.dayCycle, key=kind+(day?'d':'n');
+  el.style.display = (P.dayCycle || P.weather>0) ? '' : 'none';
+  if(key===_wxKey) return; _wxKey=key;
+  const svg='<svg viewBox="0 0 24 24">'+WX_ICON[kind](day)+'</svg>';
+  const a=el.querySelector('.wxA'), b=el.querySelector('.wxB');
+  b.innerHTML=svg; b.style.opacity=1; a.style.opacity=0;                  // cross-fade old -> new
+  el.dataset.tip='Weather: '+WX_NAME[kind]+(kind==='clear' ? (day ? ' and sunny' : ' night') : ''); el.setAttribute('aria-label', el.dataset.tip);
+  a.classList.replace('wxA','wxB'); b.classList.replace('wxB','wxA');
+}
 
 // fair-weather cumulus: clumps of soft puffs 110-230 m up, fixed in the world (so they drift past as the
 // flock flies) and wrapped around the camera so there are always some about; they fade out far away.
@@ -752,7 +1207,7 @@ const clouds=(()=>{ const rnd=_hashRng(1234), list=[];
       sp.scale.set(sz, sz*(low?0.45:0.75), 1); grp.add(sp);
     }
     scene.add(grp);
-    list.push({grp, mats:[mTop,mBot], x:(rnd()-0.5)*CLOUD_TILE, z:(rnd()-0.5)*CLOUD_TILE, y:110+120*rnd()});
+    list.push({grp, mats:[mTop,mBot], x:(rnd()-0.5)*CLOUD_TILE, z:(rnd()-0.5)*CLOUD_TILE, y:110+120*rnd(), cut:rnd()});
   }
   return list; })();
 function updateClouds(px, pz){
@@ -760,8 +1215,10 @@ function updateClouds(px, pz){
   for(const c of clouds){
     const dx=wrap(c.x-px), dz=wrap(c.z-pz), d=Math.hypot(dx,dz);
     c.grp.position.set(px+dx, c.y, pz+dz);
-    const op=clamp(1-(d-750)/450, 0, 1)*0.95;               // fade out toward the wrap edge
+    // fade out toward the wrap edge; more of them when it's cloudier; lost in the murk when the fog is thick
+    const op=clamp(1-(d-750)/450, 0, 1)*0.95*clamp((sky.cloud*0.75+0.4 - c.cut)*5, 0, 1)*(1-0.8*sky.fog);
     c.mats[0].opacity=op; c.mats[1].opacity=op; c.grp.visible=op>0.01;
+    c.mats[0].color.copy(sky.cloudTop); c.mats[1].color.copy(sky.cloudBot);
   }
 }
 
@@ -965,7 +1422,7 @@ function makeBirdMesh(lead){
     const ln=new THREE.Line(g,new THREE.LineBasicMaterial({color:c,transparent:true,opacity:0.4}));
     ln.frustumCulled=false; flockRoot.add(ln); return ln; };
   const trailR=mkTrail(lead?0xffd18a:0xffb454), trailL=mkTrail(lead?0x8fe9df:0x4bd6c9);
-  return {root, skin, trailR, trailL, wingMats:[wingMat, wingMat2], head, feet,
+  return {root, skin, headMat, trailR, trailL, wingMats:[wingMat, wingMat2], head, feet,
           wingR:R.shoulder, wingRin:R.inner, wingRelbow:R.elbow, wingRout:R.outer, wingRtips:R.feathers,
           wingL:Lw.shoulder, wingLin:Lw.inner, wingLelbow:Lw.elbow, wingLout:Lw.outer, wingLtips:Lw.feathers, tail};
 }
@@ -1006,24 +1463,80 @@ function setArrow(a, origin, vec, scale){
   a.setLength(clamp(len,0.05,60), Math.min(len*0.28,2.2), Math.min(len*0.16,1.2));
 }
 
-/* --------------------------------------------------------- WIND FLOW PARTICLES */
-let flow, flowPos, flowN=900, flowVel=[];
+/* --------------------------------------------------------- AIRFLOW LINES */
+// AIRFLOW (v29, replaces the old drifting dots): smoke-like streaks of air streaming past the flock, drawn in the
+// flock's own frame -- the air as the birds meet it, like the streamlines round a wing in a wind tunnel. Each streak
+// is carried by the real air (the breeze, gusts, ridge lift and every bird's wake) less the flock's own motion, so
+// the lines bend UP in the lift beside a bird's wingtips, DOWN in the wash behind it, and up over the cliff edge.
+// The up-and-down part is drawn 3x larger than life so you can see it; green where the air rises, red where it sinks.
+// Purely a picture: nothing here feeds back into the flight.
+const FLOW_N=170, FLOW_M=16, FLOW_DT=0.05, FLOW_VX=3;
+let flow=null; const flowL=[];
+const _flC=V3(), _flF=V3(1,0,0), _flS=V3(0,0,1), _flV=V3(), _flP=V3();
 function buildFlow(){
   if(flow) scene.remove(flow);
-  const g=new THREE.BufferGeometry();
-  flowPos=new Float32Array(flowN*3);
-  for(let i=0;i<flowN;i++) resetFlowParticle(i,true);
-  g.setAttribute('position', new THREE.Float32BufferAttribute(flowPos,3));
-  const m=new THREE.PointsMaterial({color:0xdff3ff,size:0.12,transparent:true,opacity:0.5,depthWrite:false});
-  flow=new THREE.Points(g,m); scene.add(flow);
+  const nv=FLOW_N*(FLOW_M-1)*2, g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nv*3), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nv*3), 3));
+  g.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(nv), 1));
+  const m=new THREE.ShaderMaterial({transparent:true, depthWrite:false, uniforms:{op:{value:0.8}},
+    vertexShader:`attribute float alpha; attribute vec3 color; varying float vA; varying vec3 vC;
+      void main(){ vA=alpha; vC=color; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`uniform float op; varying float vA; varying vec3 vC; void main(){ gl_FragColor=vec4(vC, vA*op); }`});
+  flow=new THREE.LineSegments(g, m); flow.frustumCulled=false; flow.visible=false; scene.add(flow);
+  flowL.length=0;
+  for(let i=0;i<FLOW_N;i++) flowL.push({h:[], up:[], age:0, acc:0});
 }
-function resetFlowParticle(i, anywhere){
-  // spawn in a box ahead of / around the bird
-  const b = state ? state.pos : V3(0,20,0);
-  const x = b.x + (anywhere? (Math.random()*60-30) : (18+Math.random()*8));
-  const y = b.y + (Math.random()*24-12);
-  const z = b.z + (Math.random()*40-20);
-  flowPos[i*3]=x; flowPos[i*3+1]=Math.max(0.3,y); flowPos[i*3+2]=z;
+function flowFrame(){                                     // the middle of what you're watching, and the way the flock is going
+  const c = (focusLead && P.camFlock && _fcOk) ? _fc : (state ? state.pos : V3(0,20,0));
+  _flC.copy(c);
+  let vx=0, vz=0, vy=0, n=0;
+  for(const b of birds) if(flying(b)){ vx+=b.vel.x; vy+=b.vel.y; vz+=b.vel.z; n++; }
+  if(!n && state){ vx=state.vel.x; vy=state.vel.y; vz=state.vel.z; n=1; }
+  if(n){ _flV.set(vx/n, vy/n, vz/n); const h=Math.hypot(_flV.x, _flV.z); if(h>1){ _flF.set(_flV.x/h, 0, _flV.z/h); _flS.set(-_flF.z, 0, _flF.x); } }
+}
+function seedFlowLine(L, anywhere){                       // a new streak, ahead of the flock (or anywhere round it, at the start)
+  const a = anywhere ? (Math.random()*64-30) : (30+Math.random()*6);
+  const sd = (Math.random()*2-1)*24, up = (Math.random()*2-1)*(Math.random()<0.6 ? 3 : 9);   // (thickest at the flock's own height)
+  L.h.length=0; L.up.length=0; L.age=0; L.acc=0;
+  L.h.push([_flF.x*a + _flS.x*sd, up, _flF.z*a + _flS.z*sd]); L.up.push(0);
+}
+function flowAirUp(px, py, pz){                           // the wakes' vertical air at a point (the same vortex model the birds feel)
+  if(!P.draft) return 0; let u=0;
+  for(const o of birds){ if(o._hx==null || !airborne(o)) continue; u += vortexUp(px, py, pz, o); }
+  return P.draftStrength*u;
+}
+function updateFlow(dt){
+  if(!flow) return;
+  if(!P.vFlow){ flow.visible=false; return; }
+  flowFrame();
+  if(!flow.visible || !flow.userData.at || flow.userData.at.distanceToSquared(_flC)>900){ for(const L of flowL) seedFlowLine(L, true); }
+  flow.visible=true; (flow.userData.at||(flow.userData.at=V3())).copy(_flC);
+  if(!(dt>0)) return;
+  const pos=flow.geometry.attributes.position.array, col=flow.geometry.attributes.color.array, al=flow.geometry.attributes.alpha.array;
+  let k=0;
+  for(const L of flowL){
+    const hd=L.h[0];
+    _flP.set(_flC.x+hd[0], _flC.y+hd[1], _flC.z+hd[2]);
+    const w=windAt(_flP), wu=flowAirUp(_flP.x, _flP.y, _flP.z);
+    const vUp = (w.y - P.updraft) + wu;                  // the air's own up/down motion here (ridge lift, gusts, wakes)
+    hd[0] += (w.x - _flV.x)*dt; hd[2] += (w.z - _flV.z)*dt;
+    hd[1] += (P.updraft + FLOW_VX*vUp - _flV.y)*dt;
+    L.up[0]=vUp; L.age+=dt; L.acc+=dt;
+    if(L.acc>=FLOW_DT){ L.acc=0; L.h.splice(1, 0, hd.slice()); L.up.splice(1, 0, vUp); if(L.h.length>FLOW_M){ L.h.pop(); L.up.pop(); } }
+    const along=hd[0]*_flF.x+hd[2]*_flF.z, side=hd[0]*_flS.x+hd[2]*_flS.z;
+    if(along<-32 || along>40 || Math.abs(side)>30 || Math.abs(hd[1])>16 || _flC.y+hd[1]<0.3) seedFlowLine(L, false);
+    // the streak: bright at its head, fading back along its tail; it fades in when new and out toward the back
+    const life=clamp(L.age/0.6, 0, 1)*clamp((along+32)/10, 0, 1)*clamp((30-Math.abs(side))/6, 0, 1);
+    for(let j=0;j<FLOW_M-1;j++){
+      for(const q of [j, j+1]){ const pt=L.h[Math.min(q, L.h.length-1)], u=L.up[Math.min(q, L.up.length-1)];
+        pos[k*3]=_flC.x+pt[0]; pos[k*3+1]=_flC.y+pt[1]; pos[k*3+2]=_flC.z+pt[2];
+        const t=clamp(u/1.2, -1, 1);                     // white -> green (rising) / red (sinking)
+        col[k*3]   = t<0 ? 1.0 : 0.88-0.5*t;  col[k*3+1] = t<0 ? 0.9+0.5*t : 0.93+0.07*t;  col[k*3+2] = t<0 ? 0.9+0.6*t : 0.95-0.5*t;
+        al[k] = (q<L.h.length ? 1 : 0)*life*(1 - q/(FLOW_M-1))*0.9;
+        k++; } }
+  }
+  flow.geometry.attributes.position.needsUpdate=true; flow.geometry.attributes.color.needsUpdate=true; flow.geometry.attributes.alpha.needsUpdate=true;
 }
 
 /* --------------------------------------------------------- TRAILS */
@@ -1190,6 +1703,7 @@ function gauss(){ return Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math
 function resetFlock(){
   recomputeDerived();
   for(const st of birds) disposeMesh(st.mesh);
+  try{ _fcOk=false; }catch(e){}
   birds=[]; order=[]; lastFront=-1; windT=0; pockets=[]; fogCharges=P.fogBurst; fogLastT=-1e9;
   clearSchools(); fishLog.length=0; schoolTimer=5;
   const n=Math.max(1, Math.round(P.nBirds));
@@ -1203,6 +1717,11 @@ function resetFlock(){
     st.fatigue = Math.random()*0.3;
     // quirks: this bird's own leanings, drawn once and scaled live by P.quirk (see qk())
     st.qr = {fd:gauss(), lat:gauss(), side:gauss(), alt:gauss(), look:Math.random()};
+    // SIZE (v29): sex and body size, from a hash of the bird's index (not the seeded RNG, so seeded runs match v28)
+    { const hh=k=>{ const h=Math.sin(i*78.233+k*19.171+2.7)*43758.5453; return h-Math.floor(h); };
+      const g=Math.sqrt(-2*Math.log(Math.max(1e-6,hh(1))))*Math.cos(6.2832*hh(2));
+      st.male = hh(3)<0.5; st.size0 = (st.male ? 1.03 : 0.97) + 0.025*clamp(g,-2.5,2.5);
+      st.juvR = i===0 ? 1 : hh(4); }   // (the bird that starts in front is an adult)
     { const h=Math.sin(i*12.9898+4.1)*43758.5453; st.hunger = clamp(P.hungerStart*(0.6+0.6*(h-Math.floor(h))), 0, 1); }   // not from the seeded RNG, so seeded runs match v22
     st.mesh = makeBirdMesh(i===0);
     birds.push(st); order.push(i);
@@ -1236,6 +1755,7 @@ function resetFlock(){
   try{ cam.target.copy(state.pos); }catch(e){}            // start on the lead, not gliding over from bird 0
   // reset the surface-skim cycle to a fresh high cruise
   skimState='cruise'; skimHold=0; flockBaseAlt=P.startAlt; skimCountdown=P.skimPeriod*(0.6+Math.random()*0.8);
+  ridgeK=0; ridgeWant=false; ridgeCountdown=0.5*P.ridgePeriod;   // (not from the seeded RNG, so seeded runs match v28)
   buildShadows();
   chartData.length=0;
 }
@@ -1259,6 +1779,7 @@ function windAt(pos){
     w.x += s*gx; w.y += s*0.8*gy*(1 - Math.exp(-Math.max(pos.y,0)/1.5)); w.z += s*gz;
   }
   if(pockets.length) addPockets(w, pos);
+  if(P.ridgeWind>0) w.y += ridgeLift(pos.x, pos.y, pos.z);
   return w;
 }
 
@@ -1418,7 +1939,7 @@ function computeForces(st){
     let geMul=1;
     const worldY=st.pos.y + p.clone().applyQuaternion(st.quat).y;
     if(worldY<lowY) lowY=worldY;                     // lowest wing point -> tip clearance over the water
-    if(P.groundEffect){
+    if(P.groundEffect && st._overSea!==false){            // (ground effect is the sea's: none over the beach or the bluffs)
       const h=Math.max(0.05,worldY);
       const ge=Math.exp(-h/(3*P.span));              // reaches ~a wingspan-and-a-half up
       geMul=1+P.geStrength*0.22*ge;                   // modest extra lift (kept small so it doesn't bounce the bird out of GE)
@@ -1882,7 +2403,7 @@ function fishControl(st, dt){
   st.modeT += dt;
   if(P.fishing) st.hunger = Math.min(1, st.hunger + P.hungerRate*dt);
   if(st.mode==='fly'){
-    if(!P.fishing || st.hunger<=P.hungerGo) return false;
+    if(!P.fishing || st.hunger<=P.hungerGo || ridgeK>0) return false;   // (not while up soaring the bluffs)
     st.lookFishT=(st.lookFishT||0)-dt; if(st.lookFishT>0) return false; st.lookFishT=0.5;
     const s=spotSchool(st); if(!s) return false;
     st.school=s; setMode(st,'circle'); st.circT=0;
@@ -2289,6 +2810,7 @@ function flockControl(st, dt){
   const qk=k=> P.quirk*(st.qr ? st.qr[k] : 0);
   const myFd  = P.followDist*clamp(1 + 0.18*qk('fd'), 0.7, 1.45);
   const myLat = WK.bprime*clamp(1 + 0.12*qk('lat'), 0.8, 1.25);
+  const latTo = b=> myLat*0.5*((st._sz||1) + (b._sz||1));   // (half my vortex span plus half of the bird ahead's)
 
   // ---- 1. PACE
   st.vPref = P.paceSpeed*(1+(st.drive||0))*(1 - P.fatigueSlow*st.fatigue);
@@ -2339,8 +2861,8 @@ function flockControl(st, dt){
       const bLc = bb ? -(b.pos.x-bb.pos.x)*bb._hz + (b.pos.z-bb.pos.z)*bb._hx : 0;
       const bSide = Math.abs(bLc) > 0.5 ? Math.sign(bLc) : 0;
       for(const side of [-1,0,1]){
-        const sx=b.pos.x - b._hx*myFd - b._hz*side*myLat;                  // spot behind b, in b's frame
-        const sz=b.pos.z - b._hz*myFd + b._hx*side*myLat;
+        const sx=b.pos.x - b._hx*myFd - b._hz*side*latTo(b);               // spot behind b, in b's frame
+        const sz=b.pos.z - b._hz*myFd + b._hx*side*latTo(b);
         let taken=false;
         for(const w of birds){ if(w===st || w===b) continue;
           const ex=w.pos.x-sx, ez=w.pos.z-sz, al=ex*b._hx+ez*b._hz, la=-ex*b._hz+ez*b._hx;
@@ -2350,7 +2872,9 @@ function flockControl(st, dt){
                   - reachCost(sx-st.pos.x, sz-st.pos.z, b, st)
                   + (side===0 ? P.pursuit : 0) + (side!==0 && side===bSide ? P.lineUp : 0)
                   + (b===tgt && side===st.spotSide ? 0.1 : 0)                 // don't flicker between near-equal spots
-                  + 0.05*side*qk('side') + 0.04*P.quirk*gauss();              // my favourite side, and a misjudgement now and then
+                  + 0.05*side*qk('side') + 0.04*P.quirk*gauss()               // my favourite side, and a misjudgement now and then
+                  + (ridgeK>0 ? 0.5*ridgeLift(sx, b.pos.y, sz) : 0);          // along the cliffs, the rising air off the bluff counts too:
+                                                                              // the V narrows to the band of lift, into a staggered line
         if(score>bs){ bs=score; best=b; bestSide=side; st.spotDx=sx-b.pos.x; st.spotDz=sz-b.pos.z; }
       }
     }
@@ -2404,7 +2928,7 @@ function flockControl(st, dt){
 
   // ---- heading: a bird with nobody ahead follows the coast; a follower lines up with the bird it
   // follows (blended with the coast it can also see). Banked, coordinated turns.
-  const psiTan = Math.atan(coastFollowSlope(st.pos.x));
+  const psiTan = Math.atan(flockLineSlope(st.pos.x));
   // STARTLE (Finger of God): a bird that feels an air pocket hard breaks formation for up to ~1 s and
   // veers away from its centre (sideways and in heading), then the usual rules bring it back.
   if(pockets.length){
@@ -2418,7 +2942,7 @@ function flockControl(st, dt){
   const startle = st.startleT>0 ? st.startleK*st.startleT/st.startleT0 : 0;
   if(st.startleT>0) st.startleT -= dt;
   if(lead){
-    const crossTrack = coastFollow(st.pos.x) - st.pos.z;      // >0 = need +z
+    const crossTrack = flockLineZ(st.pos.x) - st.pos.z;       // >0 = need +z (along the sea, or the cliff edge)
     // crab into a crosswind as much as it takes (up to ~23 deg) to hold the line along the shore
     const xt = clamp(0.05*crossTrack - 0.14*st.vel.z, -0.4, 0.4);
     st.hdgCmd = psiTan + xt;
@@ -2471,7 +2995,7 @@ function flockControl(st, dt){
     // head for the spot I chose (rule 2) -- briskly, up to 1.6 m/s, so I don't linger in the downwash
     // inside the V on the way to an arm's end; feeling the air (rule 3) then fine-tunes where I sit in it
     st.spotC = st.spotDx!=null ? (tgt.pos.x+st.spotDx-st.pos.x)*nx + (tgt.pos.z+st.spotDz-st.pos.z)*nz
-                               : c + (st.spotSide||0)*myLat;
+                               : c + (st.spotSide||0)*latTo(tgt);
     vlat += 0.4*clamp(st.spotC, -4, 4);
     st.side = c<0 ? +1 : -1;                                  // which side of the bird ahead I'm on
   } else st.side=0;
@@ -2555,7 +3079,7 @@ function flockControl(st, dt){
 
   // DRAFT GATE: the slipstream's forward push fades as I close within minGap of the bird ahead, so
   // riding its wake can't carry me straight through it. Plus an auto-flare when overrunning.
-  if(lead){ st.draftGate = 1; st.brake = sepBrake; }
+  if(lead){ st.draftGate = 1; st.brake = ridgeK>0 ? Math.max(sepBrake, clamp(0.35*(st.gsS - aheadV - 0.4), 0, 0.8)) : sepBrake; }   // (riding the lift, don't run away from the flock)
   else {
     const minGap=0.8;
     st.draftGate = clamp((gap - minGap)/Math.max(desiredGap - minGap, 0.1), 0, 1);
@@ -2574,6 +3098,15 @@ function flockControl(st, dt){
   } else st.altOff = (st.altOff||0)*(1 - Math.min(1, dt/2));
   if(sepUp) st.altOff = clamp(st.altOff + dt*1.2*sepUp, skimState==='cruise' ? -P.altFreedom-0.5 : -0.1*flockBaseAlt, P.altFreedom+0.5);
   let newAlt = flockBaseAlt + st.altOff;
+  // EASY CRUISE (v28): a gliding bird lets itself sink a little (trading height for speed, so the glide lasts)
+  // and climbs back while it flaps: the gentle undulating flap-glide of a pelican on passage. A follower takes
+  // its sag from the bird it follows, so the whole line rises and falls together (a wave passing down it) and
+  // each bird stays in the wake it is riding.
+  if(P.easyCruise && skimState==='cruise' && P.flapStrategy==='intermittent'){
+    if(lead) st.sag = clamp((st.sag||0) + dt*(st.flapping===false ? 1.0 : -0.45), 0, 3.0);   // (a pelican's glide sinks ~1 m/s)
+    else st.sag = (st.sag||0) + ((tgt.sag||0) - (st.sag||0))*Math.min(1, dt/0.4);
+    newAlt -= st.sag;
+  } else st.sag = Math.max(0, (st.sag||0) - dt*0.5);
   // back from fishing: climb up to the flock's height at a steady 2 m/s rather than all at once
   if(st.climbing){ st.climbAlt += 2*dt; if(st.climbAlt >= newAlt) st.climbing=false; else newAlt = st.climbAlt; }
   // something to clear ahead: climb to it (at up to 3 m/s), then settle back as it falls behind
@@ -2589,6 +3122,7 @@ function flockControl(st, dt){
   if(P.flapStrategy==='intermittent'){
     const line=st.targetAlt||P.startAlt;
     // PD station-keeping: flap when behind OR falling behind; glide when on-station and speed-matched.
+    const easy = P.easyCruise && skimState==='cruise';
     const demand = (lead ? 1.6*(aheadV - st.gsS)
                          : 1.0*gapErr + 1.3*(aheadV - st.gsS)) - 2*sepBrake;   // giving way: hold back
     // a follower tolerates some slack in its spacing (chasing every gust-driven wobble would burn the
@@ -2599,13 +3133,39 @@ function flockControl(st, dt){
     const absFloor = st.pos.y < floor;
     const speedCap = lead ? 1.15*Math.max(st.vPref, aheadV) : Math.max(1.25*P.paceSpeed, aheadV + 1.5);
     const tooFast  = st.gsS > speedCap;
-    if((demand > deadband && !tooFast) || slow || absFloor){
+    // easy cruise: hysteresis -- a burst carries on until there's a little speed in hand, and a glide until it is
+    // spent; the bird rides a gentle speed-up / slow-down cycle instead of topping up every fraction of a second
+    // easy cruise, following: FLAP WHERE THE BIRD AHEAD FLAPPED. A pelican in a line takes its rhythm from the
+    // bird in front -- it starts beating at about the spot where that bird started, and glides where it glided --
+    // so a wave of wingbeats runs back down the line. The follower's own station-keeping only sets how hard it
+    // beats, and takes over when it is well out of place (far behind: flap; crowding in: glide).
+    let rhythm = null;
+    if(easy && !lead && tgt && tgt._fh){
+      const delay = clamp(gap/Math.max(st.gsS, 3), 0, 3), tq = windT - delay;
+      rhythm = tgt._fh.s0; for(const [t0, on0] of tgt._fh.log){ if(t0 <= tq) rhythm = on0; else break; }
+    }
+    const on = rhythm!=null ? (rhythm ? demand > P.rhythmSkip : demand > deadband + P.rhythmOver)
+             : easy ? (st._cb ? demand > (lead ? -0.6 : -0.45) : demand > (lead ? 1.2 : deadband+0.3)) : demand > deadband;
+    st._cb = easy && on && !tooFast;
+    if((on && !tooFast) || slow || absFloor){
       st.flapping = true;
       st.ampScale = clamp(0.3 + 0.42*demand + (slow?0.4:0) + (absFloor?0.5:0), 0.3, 1);
+      // easy cruise: a burst is a real working beat, not a feeble one just matching drag -- a weak beat that
+      // only holds the speed a little under pace never builds the surplus a glide needs, so it never stops
+      if(easy && lead) st.ampScale = Math.max(st.ampScale, clamp(0.75 + 0.3*demand, 0.75, 1));
+      else if(rhythm) st.ampScale = clamp(P.rhythmAmp + 0.3*demand + (slow?0.4:0) + (absFloor?0.5:0), 0.3, 1);   // keeping station by beat strength
     } else {
       st.flapping = false; st.ampScale = 0;
     }
     T.coasting=!st.flapping;
+    // remember when I started and stopped beating, for the bird behind me to take its rhythm from. A follower
+    // passes on the rhythm it took, not its own catch-up beats -- otherwise every bird's corrections would be
+    // copied by all the birds behind it, piling up down the line.
+    const fh = st._fh || (st._fh = {s0:st.flapping, log:[]});
+    const mine = rhythm!=null ? rhythm : st.flapping;
+    const last = fh.log.length ? fh.log[fh.log.length-1][1] : fh.s0;
+    if(mine !== last) fh.log.push([windT, mine]);
+    while(fh.log.length && fh.log[0][0] < windT - 4){ fh.s0 = fh.log.shift()[1]; }
   } else {
     st.flapping=true; st.ampScale=1; T.coasting=false;
   }
@@ -2652,17 +3212,18 @@ function vortexUp(px, py, pz, other){
   // (or sinking) air the air carries the wake with it. In lift stronger than ~0.6 m/s the wake RISES, so
   // the best air is a little above the bird ahead, not below it. Brief gusts are left out: they shove the
   // birds about as much as their wakes (tried: letting gusts carry the wake broke up the V in gusty air).
-  const sink=(WK.wSink - (other._wy||0))*back/WK.Vref;
+  const so=other._sz||1, mo=other._mf||1;               // (a bigger bird sheds a stronger, wider wake)
+  const sink=(WK.wSink*mo/(so*so) - (other._wy||0))*back/WK.Vref;
   const dy=py - other.pos.y;
   const dyV=dy + sink;                                   // to the (sunken) vortex
   const dyI=dy + 2*other.pos.y - sink;                   // to its mirror image below the sea surface
   let u=0;
   for(const sg of [+1,-1]){                              // the two wingtips of 'other'
-    const dz=lz - sg*WK.tipZ;
-    u += sg*WK.k*dz/(dz*dz + dyV*dyV + WK.rc*WK.rc)*decay;
+    const dz=lz - sg*WK.tipZ*so, kk=WK.k*mo/so;
+    u += sg*kk*dz/(dz*dz + dyV*dyV + WK.rc*WK.rc)*decay;
     // GROUND EFFECT ON THE WAKE: near the water each tip vortex has an opposite-signed image vortex,
     // which cancels much of the upwash beside it. Skimming low, there's little V niche left to find.
-    if(P.groundEffect) u -= sg*WK.k*dz/(dz*dz + dyI*dyI + WK.rc*WK.rc)*decay;
+    if(P.groundEffect && other._overSea!==false) u -= sg*kk*dz/(dz*dz + dyI*dyI + WK.rc*WK.rc)*decay;
   }
   return u;
 }
@@ -2685,15 +3246,14 @@ function computeWakes(){
   const wSink = P.wakeSink ? 2*L/(rho*Vref*Math.PI*bprime*bprime) : 0;
   Object.assign(WK, {k, tipZ, rc, wSink, Vref, bprime});
   const sw2=Math.max(P.slipWidth,0.2)**2, sld=Math.max(P.slipDecay,0.5);
-  for(const o of birds){ const h=Math.hypot(o.vel.x,o.vel.z)||1; o._hx=o.vel.x/h; o._hz=o.vel.z/h; o._wy=P.updraft; }
-  const off=0.5*P.span;                         // sample point at the middle of each half-wing
+  for(const o of birds){ const h=Math.hypot(o.vel.x,o.vel.z)||1; o._hx=o.vel.x/h; o._hz=o.vel.z/h; o._wy=P.updraft + (P.ridgeWind>0 ? ridgeLift(o.pos.x, o.pos.y, o.pos.z) : 0); }
   const uS=[0,0,0,0,0], dS=[0,0,0];   // uS: -side, body, +side, body+0.3 m, body-0.3 m
   for(const st of birds){
     if(!st.wakeWind) st.wakeWind=V3();
     st.wakeWind.set(0,0,0); st.tel.upwash=0; st.draftFactor=0; st.tel.draft=0;
     st.upL=st.upR=st.upU=st.upD=st.dfL=st.dfR=0;
     if(!P.draft || !airborne(st)) continue;
-    const nx=-st._hz, nz=st._hx;
+    const nx=-st._hz, nz=st._hx, off=0.5*P.span*(st._sz||1);   // sample point at the middle of each half-wing
     uS.fill(0); dS.fill(0); let fdx=0, fdz=0;
     for(const other of birds){
       if(other===st || !airborne(other)) continue;
@@ -2725,6 +3285,28 @@ function computeWakes(){
   }
 }
 
+/* ---------------------------------------------------- RIDGE SOARING (v29, lead's call) */
+// Now and then, when there's an onshore breeze, the flock leaves the water and goes up to the cliff edge to ride
+// the ridge lift there, coasting along the bluffs with hardly a wingbeat -- then comes back down to the sea. The
+// line swings in low first, to just off the foot of the face, and the rising air there carries them up; on the
+// way back they glide down along the face before swinging out over the water. Ground effect only works over the water: up here
+// it's the rising air that carries them.
+function updateRidge(dt){
+  const ok = P.ridgeEnable && P.ridgeWind>0;
+  if(!ok){ ridgeWant=false; }
+  else if(!ridgeWant && ridgeK===0 && skimState==='cruise'){
+    ridgeCountdown -= dt;
+    if(ridgeCountdown<=0){ ridgeWant=true; ridgeHold=P.ridgeDuration*(0.7+0.6*Math.random()); }
+  }
+  if(ridgeWant && ridgeK>=1){ ridgeHold -= dt; if(ridgeHold<=0){ ridgeWant=false; ridgeCountdown=P.ridgePeriod*(0.6+0.8*Math.random()); } }
+  ridgeK = clamp(ridgeK + (ridgeWant ? 1 : -1)*dt/60, 0, 1);   // (a slow ~30 s climb at ~1 m/s, swinging in toward the edge as they rise)
+}
+function cruiseTarget(){
+  if(ridgeK<=0) return P.startAlt;
+  const lx = birds.length ? birds[order[0]].pos.x : 0;
+  return P.startAlt + _rKc()*(Math.max(P.startAlt, ridgeAlt(lx)) - P.startAlt);
+}
+
 /* ---------------------------------------------------- SURFACE-SKIM CYCLE (lead's call) */
 // Real pelicans working the surf line drop down and hydroplane just over the water in ground
 // effect -- scanning for fish -- then climb back to cruise. It's the LEAD's decision and the whole
@@ -2733,10 +3315,11 @@ function computeWakes(){
 // birds don't jockey for position until the full dip-and-rise completes (see PASS in flockControl).
 function updateSkim(dt){
   const cruiseA=P.startAlt, rate=2.2;      // gentle ~2 m/s climb/descent of the shared base altitude
-  if(!P.skimEnable){ skimState='cruise'; flockBaseAlt += (cruiseA-flockBaseAlt)*Math.min(1,dt*1.5); return; }
+  if(!P.skimEnable){ updateRidge(dt); skimState='cruise'; flockBaseAlt += (cruiseTarget()-flockBaseAlt)*Math.min(1,dt*1.5); return; }
+  updateRidge(dt);
   if(skimState==='cruise'){
-    flockBaseAlt += (cruiseA-flockBaseAlt)*Math.min(1,dt*1.2);
-    skimCountdown -= dt;
+    flockBaseAlt += (cruiseTarget()-flockBaseAlt)*Math.min(1,dt*1.2);
+    if(ridgeK===0 && !ridgeWant) skimCountdown -= dt;           // (no skims while going up to the cliffs or soaring them)
     if(skimCountdown<=0){ skimState='descend';                 // lock the coast heading for the dip -> fly straight along the surf
       skimFreezeX = birds.length?birds[order[0]].pos.x:0;
       skimFreezeHdg = Math.atan(coastFollowSlope(skimFreezeX)); }
@@ -2758,14 +3341,46 @@ function updateSkim(dt){
   }
 }
 
+/* ---------------------------------------------------- BIRD SIZES (v29) */
+// Real pelicans aren't clones: males are a few percent longer and ~10% heavier than females, every bird
+// differs a little, and first-year birds are a bit smaller and lighter still. A bird scaled by s in length
+// has wings s^2 bigger but weighs s^3 more, so a big bird carries more weight on each square metre of wing
+// (it has to fly faster, or work harder, to stay up) and beats its wings a little slower (~s^-0.5). Its
+// wake is stronger too: its wingtip vortices carry its weight, and sit further apart.
+// The physics is written for ONE bird described by P, so each bird "wears" its size while it is stepped:
+// P's body measurements are scaled to it (and derived recomputed), then put back.
+const SIZE_KEYS=[['span',1],['rootChord',1],['neckLen',1],['tailLen',1],['momentArm',1],['tailArea',2],['flapFreq',-0.5]];
+let _szBase=null; const _szDer={};
+function updateSizes(){
+  const v=P.sizeVar||0;
+  for(const st of birds){
+    const juv = (st.juvR==null ? 1 : st.juvR) < (P.juvFrac||0);
+    st.isJuv = juv;
+    st._sz = 1 + v*((st.size0||1) - 1) - (juv ? 0.05 : 0);
+    st._mf = Math.pow(st._sz, 3)*(juv ? 0.92 : 1);
+  }
+}
+function wearSize(st){
+  if(_szBase){ for(const k in _szBase) P[k]=_szBase[k]; Object.assign(derived, _szDer); _szBase=null; }   // take the last one off
+  if(!st || (st._sz===1 && st._mf===1) || st._sz==null) return;
+  _szBase={mass:P.mass}; for(const [k] of SIZE_KEYS) _szBase[k]=P[k];
+  Object.assign(_szDer, derived);
+  P.mass*=st._mf; for(const [k,e] of SIZE_KEYS) P[k]*=Math.pow(st._sz, e);
+  recomputeDerived();
+}
+
 /* ---------------------------------------------------- STEP THE WHOLE FLOCK */
 function stepFlock(dt){
   windT += dt;                             // advances the gust field
   updateSchools(dt); updateComeGo(dt);                       // fish schools drift, get eaten, turn up (fishing, v23)
   updateSkim(dt);                          // advance the shared dip/rise altitude
+  updateSizes();
+  for(const st of birds) st._overSea = terrainH(st.pos.x, st.pos.z) < 0;
   computeWakes();
-  for(const st of birds) flockControl(st, dt);
-  for(const st of birds) stepBird(st, dt);
+  try {
+    for(const st of birds){ wearSize(st); flockControl(st, dt); }
+    for(const st of birds){ wearSize(st); stepBird(st, dt); }
+  } finally { wearSize(null); }
   describeT -= dt;
   if(describeT<=0){ describeT=0.1; describeFlock(); }
 }
@@ -2835,6 +3450,8 @@ const SCHEMA=[
    {k:'catchupCost',label:'Energy cost of catching up',min:0,max:3,step:0.1,unit:'×',hint:'0 = distance to a spot costs a flat 0.03 m/s per metre. Above 0 = priced from energy: the extra power to fly faster than the flock until I get there (dropping back saves it), plus the drafting I lose on the way, spread over the time I expect to hold the spot (holdTime, 20 s). 1 = that estimate as is'},
    {k:'personalSpace',label:'Personal space',min:0,max:2.5,step:0.05,unit:'m',hint:'the clear air a bird keeps between itself and any other bird. A bird that sees it is about to cut across another gives way: the one behind holds back, slides off and steps up or down. 0 = only the old side-by-side overlap check'},
    {k:'cohesion',label:'Stay with the flock',min:0,max:1.5,step:0.05,unit:'',hint:'a bird with nobody close ahead that can still see birds further ahead speeds up and steers toward them; a bird leading with a big hole behind it eases off so the stragglers can catch up. 0 = a split flock stays split'},
+   {k:'sizeVar',label:'Size differences',min:0,max:2,step:0.05,unit:'',hint:'how much the birds differ in size: males run ~3% longer and ~10% heavier than females, plus each bird its own (1 = like real brown pelicans, ~±6% in wingspan, ~±18% in weight). Bigger birds carry more weight per square metre of wing and shed stronger wakes. 0 = all identical'},
+   {k:'juvFrac',label:'Young birds',min:0,max:0.6,step:0.05,unit:'',hint:'share of the flock that are first-year birds: brown all over, a little smaller and lighter than adults'},
    {k:'quirk',label:'Individual quirks',min:0,max:1.5,step:0.05,unit:'',hint:'how much birds differ in their choices: each has its own preferred spacing, how far out on the wingtip it sits, a favourite side and height, and it sometimes picks a slightly worse spot. 0 = identical birds and a mechanically perfect V'},
    {k:'pursuit',label:'Follow the bird ahead',min:0,max:0.6,step:0.05,unit:'m/s',hint:'how much a bird prefers the spot straight behind the bird ahead over a wingtip spot, in m/s of upwash. Small next to the wake, so V\'s and echelons win up high; skimming low with loose spacing (the water cancels the wake) it lines birds up into strings'},
    {k:'wakeSeek',label:'Wake seeking',min:0,max:2,step:0.05,unit:'×',hint:'how readily a bird slides toward the wing that feels more lift. 0 = it stays wherever it is'},
@@ -2929,6 +3546,10 @@ const SCHEMA=[
    {k:'headwind',label:'Headwind',min:-15,max:20,step:0.5,unit:'m/s',hint:'+ opposes flight, raises airspeed & lift'},
    {k:'crosswind',label:'Crosswind',min:-15,max:15,step:0.5,unit:'m/s'},
    {k:'updraft',label:'Updraft',min:-5,max:8,step:0.5,unit:'m/s'},
+   {k:'ridgeWind',label:'Sea breeze on the bluffs',min:0,max:12,step:0.5,unit:'m/s',hint:'onshore breeze blowing up the cliffs: it rises over the cliff edge as ridge lift, where the flock (and hang gliders) can soar. 0 = none'},
+   {k:'ridgePeriod',label:'Cliff visits every',min:30,max:400,step:10,unit:'s',hint:'roughly how often the flock leaves the water to soar the cliff edge (needs a sea breeze)'},
+   {k:'dayMinutes',label:'Length of a day',min:3,max:60,step:1,unit:'min',hint:'one sunrise to the next, in real minutes (the night goes by faster than the day)'},
+   {k:'weather',label:'Coastal fog and cloud',min:0,max:1,step:0.05,unit:'',hint:'0 = clear skies all day; higher = the marine layer rolls in and out more often and thicker'},
    {k:'turbulence',label:'Turbulence / gusts',min:0,max:4,step:0.1,unit:'',hint:'0 = steady air (best for tuning); higher = shifting gusts the flock must adapt to. Above ~1.5 drafting stops paying, so fatigue no longer drives who leads'},
    {k:'rho',label:'Air density',min:0.6,max:1.4,step:0.02,unit:'kg/m³'},
    {k:'geStrength',label:'Ground-effect strength',min:0,max:2,step:0.05,unit:'×'},
@@ -3019,13 +3640,13 @@ function buildPresetSection(host){
   fWrap.appendChild(fl); fWrap.appendChild(fsel); host.appendChild(fWrap);
 
   const tg=document.createElement('div'); tg.style.marginTop='10px';
-  const toggles=[['vForces','Force vectors'],['vFlow','Airflow'],['vTrail','Wingtip wakes'],
+  const toggles=[['vForces','Force vectors'],['vFlow','Airflow lines (the air streaming past the flock; up and down drawn 3x larger)'],['vTrail','Wingtip wakes'],
                  ['vWind','Wind vectors (green=up, red=down)'],['draft','Drafting upwash'],['leadRotate','Fatigue-driven passing (emergent lead changes)'],
-                 ['wakeSink','Wakes sink behind each bird'],['skimEnable','Surface skims (ground-effect fishing)'],
+                 ['wakeSink','Wakes sink behind each bird'],['skimEnable','Surface skims (ground-effect fishing)'],['ridgeEnable','Visits to soar the cliff edge (ridge lift)'],['dayCycle','Day and night (the sun rises and sets)'],
                  ['avoidObstacles','Avoid the jetties and hills'],['viewWide','Joiners see the whole flock (not just a cone ahead)'],
                  ['fingerOfGod','Finger of God (click near the flock to disturb it)'],
                  ['fishing','Go fishing (hungry birds hunt fish schools)'],['autoSchools','Fish schools turn up on their own'],
-                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives'],['comeGo','Birds come and go (leave to rest, join from the shore)'],['smoothFlap','Smooth flap-and-glide (bursts ease in and out)']];
+                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives'],['comeGo','Birds come and go (leave to rest, join from the shore)'],['smoothFlap','Smooth flap-and-glide (bursts ease in and out)'],['easyCruise','Easy cruising (glide and sink a little, then flap back up)'],['camFlock','Camera watches the middle of the flock (not its lead)']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!P[k];
@@ -3174,9 +3795,11 @@ function updateWorld(){
   water.position.set(Math.round(p.x/WATER_CELL)*WATER_CELL, 0, Math.round(p.z/WATER_CELL)*WATER_CELL);   // whole cells, so the facets don't swim
   waterMat.uniforms.uTime.value = performance.now()*0.001;   // roll the swell
   skyMesh.position.set(p.x, 0, p.z);
-  updateClouds(camera.position.x, camera.position.z);
+  updateSky(); updateClouds(camera.position.x, camera.position.z);
   updateBoats(performance.now()*0.001);
+  _stageFrame();
   updateBeachgoers(performance.now()*0.001);
+  updateSeaLife(performance.now()*0.001); updateHangGliders(performance.now()*0.001);
   terrainGroup.position.x = Math.round(p.x/TERR_PERIOD)*TERR_PERIOD;   // seamless endless coast
 }
 // The orbit camera aims at the followed bird, but the side panels cover part of the screen, so shift the
@@ -3190,6 +3813,32 @@ function frameBetweenPanels(on=true){
     dx=Math.round(0.5*(L+R)-0.5*W); }
   if(dx===cam.shiftX) return; cam.shiftX=dx;
   if(dx) camera.setViewOffset(innerWidth, innerHeight, -dx, 0, innerWidth, innerHeight); else camera.clearViewOffset();
+}
+// The middle of the flock, smoothed (v29). Each bird counts with a weight that fades in or out over a few seconds as
+// it joins or leaves the flock (dives for a fish, lands, takes off), so the centre never jumps when one does. The
+// aim is carried along each frame by the flock's own movement (so it never lags behind), and the leftover offset
+// to the centre is closed by a critically damped spring (~2 s): no snapping, no catching up in lurches.
+const _fc=V3(), _fcT=V3(), _fcM=V3(), _fcV=V3();
+let _fcOk=false, _fcLast=0, _camWasFlock=false;
+function flockCentre(){
+  const now=performance.now(), dt=clamp((now-_fcLast)/1000, 0, 0.1); _fcLast=now;
+  const wk=1-Math.exp(-dt/2.5);
+  _fcT.set(0,0,0); _fcM.set(0,0,0); let W=0, WM=0;
+  for(const b of birds){
+    const inF = flying(b) && (!P.comeGo || b.inMain);
+    b._cw = (b._cw==null ? (inF?1:0) : b._cw + ((inF?1:0) - b._cw)*wk);
+    if(b._cw>1e-3){ _fcT.addScaledVector(b.pos, b._cw); W+=b._cw;
+      if(b._fcP){ _fcM.addScaledVector(b.pos, b._cw).addScaledVector(b._fcP, -b._cw); WM+=b._cw; } }
+    (b._fcP||(b._fcP=V3())).copy(b.pos);
+  }
+  if(W<1e-3) return state ? state.pos : _fc;
+  _fcT.multiplyScalar(1/W);
+  if(!_fcOk){ _fc.copy(_fcT); _fcV.set(0,0,0); _fcOk=true; return _fc; }    // (first frame, or a reset)
+  if(WM>0) _fc.addScaledVector(_fcM, 1/WM);                                 // ride along with the flock
+  const w=0.9;                                                              // spring: critically damped, ~2 s
+  _fcV.addScaledVector(_fcT.sub(_fc), w*w*dt).multiplyScalar(Math.max(0, 1-2*w*dt));
+  _fc.addScaledVector(_fcV, dt);
+  return _fc;
 }
 function updateCamera(){
   if(cam.override){ frameBetweenPanels(false); cam.override(camera); return; }        // test hook: a fixed camera for screenshots
@@ -3246,8 +3895,15 @@ function updateCamera(){
   camera.up.set(0,1,0);
   // Follow off parks the camera; once the focus bird is lost in the haze (fog ends at 470 m) pick it back up
   if(!cam.follow && state && cam.target.distanceTo(state.pos)>450) setFollow(true);
-  if(cam.follow && state){                                   // tight follow so fast flight stays framed,
-    _camD.subVectors(state.pos, cam.target).multiplyScalar(0.22);   // but glide (<= 40 m/s faster than the
+  // Watching the flock as a whole (you haven't picked a bird), aim at the middle of the flock, not at its lead:
+  // the lead changes hands every so often, and swinging over to each new one jolted the view (v29).
+  const aim = (focusLead && P.camFlock) ? flockCentre() : (state ? state.pos : null);
+  const flockAim = cam.follow && aim && focusLead && P.camFlock;
+  if(flockAim && !_camWasFlock && _fcOk){ _fc.copy(cam.target); _fcV.set(0,0,0); }   // coming back from one bird: glide over
+  _camWasFlock = !!flockAim;
+  if(flockAim) cam.target.copy(_fc);                          // (already smoothed)
+  else if(cam.follow && aim){                                // tight follow so fast flight stays framed,
+    _camD.subVectors(aim, cam.target).multiplyScalar(0.22);  // but glide (<= 40 m/s faster than the
     const lim=0.04*state.vel.length()+0.7; if(_camD.length()>lim) _camD.setLength(lim);   // bird) to a new lead
     cam.target.add(_camD); }
   const t=cam.target;
@@ -3261,14 +3917,34 @@ function updateCamera(){
 
 /* ============================================================ MAIN LOOP ==== */
 let telemetry={}, playing=true, lastT=performance.now();
+// The wings are DRAWN like things with mass (v29): each joint follows the physics' angle on a stiff, critically
+// damped spring that also follows its rate. A steady wingbeat is drawn just as the physics has it, but anything
+// sudden -- the elbow straightening at the top of the stroke, a burst starting, a change of mode (takeoff, circling,
+// a dive) -- becomes a quick, smooth swing instead of a one-frame snap. Purely visual; the physics is untouched.
+// soft=true (the elbow, the hand, the feather twist, whose drawn angles bend sharply at the ends of the upstroke):
+// no rate following, and a short lag in front of the spring, so even the corners are rounded off.
+function _wSm(st, key, x, dt, rateMax, soft){
+  let s=st[key];
+  if(!s || !(dt>0) || dt>0.25){ st[key]={x, v:0, px:x, f:x}; return x; }
+  let tv=0;
+  if(!soft){ tv=(x-s.px)/dt; if(Math.abs(tv) > (rateMax||14)) tv=0; }   // a jump, not a motion: swing over to it
+  s.px=x;
+  const w=2*Math.PI*(soft ? 3.2 : 4.5), n=dt>0.02?4:2, h=dt/n;
+  for(let i=0;i<n;i++){
+    let g=x; if(soft){ s.f += (x-s.f)*(h/0.04); g=s.f; }
+    s.v += (w*w*(g-s.x) + 2*w*(tv-s.v))*h; s.x += s.v*h; }
+  return s.x;
+}
 function updateOneBird(st){
   const m=st.mesh; if(!m) return;
   m.root.position.copy(st.pos);
   if(st.mode==='swim' || (st.mode==='takeoff' && st.pos.y<0.3)) m.root.position.y += waveHJS(st.pos.x, st.pos.z);   // ride the drawn swell
   m.root.quaternion.copy(st.quat);
+  m.root.scale.setScalar(st._sz||1);
   if(st.cmdRoll) m.root.rotateX(-st.cmdRoll);   // cosmetic lean into a lateral correction (physics stays wings-level)
   // flap at shoulder, fold at elbow, twist each segment -- matching the physics
-  const be=st.beta+P.dihedral*DEG+(st.wRaise||0), sig=(st.tuck||0)*P.tuckSweep*DEG;
+  const dtM=_meshDt||1/60;
+  const be=_wSm(st,'_sBe', st.beta+P.dihedral*DEG+(st.wRaise||0), dtM), sig=_wSm(st,'_sSg', (st.tuck||0)*P.tuckSweep*DEG, dtM);
   m.wingR.rotation.set(-be, -sig, 0); m.wingL.rotation.set(be, sig, 0);   // flap/raise, then sweep back (tuck)
   if(m.head) m.head.rotation.z = st.headPitch||0;
   if(m.feet){ const wet = st.mode==='swim' || st.mode==='takeoff' || st.mode==='under';
@@ -3276,22 +3952,22 @@ function updateOneBird(st){
   // the elbow: in-plane backsweep (like a real elbow), eased so it doesn't snap straight at the top of the
   // stroke; on the upstroke the hand also hangs below the raised arm (the "M"), and on the downstroke the wrist
   // carries the hand on down past the arm, so the tips sweep well below the body
-  const k=1-Math.exp(-(_meshDt||1/60)/0.06);
-  st._fv=(st._fv==null ? st.fold||0 : st._fv + ((st.fold||0)-st._fv)*k);
+  // (the physics straightens the elbow at the very top of the stroke; drawn, it opens over the first part of the downstroke)
+  st._fv=_wSm(st,'_sFd', st.fold||0, dtM, 0, true);
   const flapV=st.flapping!==false && !(st.tuck>0.05);
-  const hand=flapV ? 0.75*st._fv*Math.max(0, be) + 0.45*Math.max(0, -be) : 0;
-  st._hv=(st._hv==null ? hand : st._hv + (hand-st._hv)*k);
+  st._hv=_wSm(st,'_sHd', flapV ? 0.75*st._fv*Math.max(0, be) + 0.45*Math.max(0, -be) : 0, dtM, 0, true);
   const gamma=st._fv*P.maxFoldDeg*DEG;
   m.wingRelbow.rotation.set(st._hv, -gamma, 0);
   m.wingLelbow.rotation.set(-st._hv, +gamma, 0);
   const betaDotMax=Math.max(1e-3,P.flapAmp*DEG*2*Math.PI*Math.max(P.flapFreq,0.01));
   const frv=clamp(st.betaDot/betaDotMax,-1.4,1.4);
   const feath=(st.betaDot<0? P.featherAmp*DEG*frv : 0);
-  const inTw=P.innerAoA*DEG+feath, outTw=P.outerAoA*DEG+feath;
+  const fth=_wSm(st,'_sFt', feath, dtM, 0, true), inTw=P.innerAoA*DEG+fth, outTw=P.outerAoA*DEG+fth;
   m.wingRin.rotation.z=inTw; m.wingLin.rotation.z=-inTw;
   m.wingRout.rotation.z=outTw; m.wingLout.rotation.z=-outTw;
   // wingtip primaries: base splay/lift (winglet), splaying more with tip spread / during coast
-  const spread=clamp((P.tipSpread||0) + (st.tel.coasting?0.4:0), 0, 1);
+  st._spr=(st._spr==null?0:st._spr) + ((st.tel.coasting?0.4:0)-(st._spr||0))*(1-Math.exp(-dtM/0.4));   // primaries spread out gently as it glides
+  const spread=clamp((P.tipSpread||0) + st._spr, 0, 1);
   const setFea=(arr,sgn)=>arr&&arr.forEach(fg=>{ const frac=fg.userData.k/4;
     const fan=(0.10 + 0.75*spread)*(frac-0.35);          // splay: outer quills fan back
     const lift=(0.20 + 0.55*spread)*(0.4+0.6*frac);      // outer quills lifted more
@@ -3312,6 +3988,7 @@ function updateOneBird(st){
 // see the hand-off in progress; once settled it's solid blue. Followers are the natural cream/tan.
 const LEAD_BODY=0x5cb6ff, LEAD_W1=0x5cb6ff, LEAD_W2=0x3f97e6, FLASH=0xffffff;
 const FOLL_BODY=0xe4dcc9, FOLL_W1=0xcfc3ad, FOLL_W2=0xbdb096;
+const JUV_BODY=0xa8977f, JUV_W1=0x8f7d64, JUV_W2=0x7d6b54, JUV_HEAD=0xb3a48e;   // first-year birds: grey-brown all over
 const _colA=new THREE.Color(), _colB=new THREE.Color();
 function mixInto(dst,a,b,t){ _colA.setHex(a); _colB.setHex(b); dst.copy(_colA).lerp(_colB,t); }
 function updateLeadColors(dt){
@@ -3319,6 +3996,7 @@ function updateLeadColors(dt){
   const s = 0.5 + 0.5*Math.sin(performance.now()*0.001*2*Math.PI*3.5);   // 3.5 Hz flash
   for(let i=0;i<birds.length;i++){
     const st=birds[i], m=st.mesh; if(!m) continue;
+    if(m.headMat) m.headMat.color.setHex(st.isJuv ? JUV_HEAD : 0xffffff);
     if(i===leadArrIdx){
       if((st.leadFlash||0)>0){
         st.leadFlash=Math.max(0,(st.leadFlash||0)-dt);
@@ -3330,8 +4008,8 @@ function updateLeadColors(dt){
       }
     } else {
       st.leadFlash=0;
-      m.skin.color.setHex(FOLL_BODY);
-      if(m.wingMats){ m.wingMats[0].color.setHex(FOLL_W1); m.wingMats[1].color.setHex(FOLL_W2); }
+      m.skin.color.setHex(st.isJuv ? JUV_BODY : FOLL_BODY);
+      if(m.wingMats){ m.wingMats[0].color.setHex(st.isJuv ? JUV_W1 : FOLL_W1); m.wingMats[1].color.setHex(st.isJuv ? JUV_W2 : FOLL_W2); }
     }
   }
 }
@@ -3347,6 +4025,12 @@ const _shadowMatrix = (function(){
   const kx=(-S.x)/(-S.y), kz=(-S.z)/(-S.y), H=SHADOW_Y;
   return new THREE.Matrix4().set(1,-kx,0,kx*H,  0,0,0,H,  0,-kz,1,kz*H,  0,0,0,1);
 })();
+const _shS=V3();
+function setShadowSun(d){                         // as the sun moves (kept at least ~17 deg up, so low-sun shadows stay near their bird)
+  _shS.copy(d); if(_shS.y<0.3){ const hz=Math.hypot(_shS.x,_shS.z)||1; _shS.x*=0.954/hz; _shS.z*=0.954/hz; _shS.y=0.3; }
+  const kx=_shS.x/_shS.y, kz=_shS.z/_shS.y, H=SHADOW_Y;
+  _shadowMatrix.set(1,-kx,0,kx*H,  0,0,0,H,  0,-kz,1,kz*H,  0,0,0,1);
+}
 const _shTmp=new THREE.Matrix4();
 function buildShadows(){
   while(shadowGroup.children.length){ const m=shadowGroup.children.pop(); m.material.dispose(); } // geometry shared w/ birds
@@ -3368,7 +4052,7 @@ function updateShadows(){
     // cast only over open water, and only while airborne
     const szc = st.pos.z - ((-30)/(-70))*(st.pos.y-SHADOW_Y);      // projected z of the bird
     const over = (szc < COAST_Z + coastLine(st.pos.x) - 1) && st.pos.y>0.15;
-    st._shadowMat.opacity = over ? clamp(0.36 - st.pos.y*0.008, 0.08, 0.36) : 0;
+    st._shadowMat.opacity = over ? clamp(0.36 - st.pos.y*0.008, 0.08, 0.36)*sky.shade : 0;
     if(!over){ for(const p of st._shadowPairs) p.sh.visible=false; continue; }
     st.mesh.root.updateMatrixWorld(true);
     for(const p of st._shadowPairs){
@@ -3387,20 +4071,6 @@ function updateBirdMesh(dt){
   }
   updateLeadColors(dt||0);
   updateShadows();
-}
-function updateFlow(dt){
-  if(!flow||!P.vFlow){ if(flow)flow.visible=false; return;} flow.visible=true;
-  const wind=windWorld(); const b=state.pos;
-  for(let i=0;i<flowN;i++){
-    // air moves at wind; relative to a mostly-forward-moving bird it streams backward
-    flowPos[i*3]   += (wind.x)*dt;
-    flowPos[i*3+1] += (wind.y)*dt;
-    flowPos[i*3+2] += (wind.z)*dt;
-    // recycle particles that fall behind or stray
-    const dx=flowPos[i*3]-b.x, dz=flowPos[i*3+2]-b.z, dy=flowPos[i*3+1]-b.y;
-    if(dx<-24||Math.abs(dz)>26||Math.abs(dy)>16||flowPos[i*3+1]<0.2) resetFlowParticle(i,false);
-  }
-  flow.geometry.attributes.position.needsUpdate=true;
 }
 function updateArrows(){
   const st=state, o=st.pos.clone();
@@ -3432,17 +4102,22 @@ function updateHUD(){
   setStat('vpref', fmt(state.vPref||P.paceSpeed));
   setStat('upwash', (telemetry.upwash>=0?'+':'')+fmt(telemetry.upwash||0));
   setStat('bird', '#'+focus+' '+role);
-  // flap / coast state badge
+  // the badges say what the FLOCK as a whole is mostly doing (v29), not just the one bird in the HUD
   const mb=document.getElementById('modeBadge');
-  const wm={dive:'DIVE', under:'UNDER', swim:'SWIM', takeoff:'TAKEOFF'}[st.mode];
-  if(wm){ mb.textContent=wm; mb.className='badge coast'; }
-  else if(P.flapStrategy!=='intermittent'){ mb.textContent='FLAP'; mb.className='badge flap'; }
-  else if(telemetry.coasting){ mb.textContent='COAST'; mb.className='badge coast'; }
-  else { mb.textContent='FLAP'; mb.className='badge flap'; }
+  let nF=0, nFl=0, vy=0, nW=0, nFish=0;
+  for(const b of birds){ if(b.mode==='swim' || b.mode==='under') nW++; else if(b.mode==='dive' || b.mode==='circle') nFish++;
+    if(flying(b)){ nF++; vy+=b.vel.y; if(b.flapping!==false) nFl++; } }
+  const _flkVy=ema('flkVy', nF ? vy/nF : 0, 0.05), _flkFl=ema('flkFl', nF ? nFl/nF : 0, 0.04);
+  const act = nW > 0.5*birds.length ? ['ON THE WATER','coast'] : nFish>=3 ? ['FISHING','coast']
+    : skimState==='skim' ? ['GROUND EFFECT','flap'] : skimState==='descend' ? ['DESCENDING','coast'] : skimState==='ascend' ? ['CLIMBING','flap']
+    : ridgeK>0 ? (ridgeWant ? (ridgeK<1 ? ['TO THE CLIFFS','cliff'] : ['SOARING THE CLIFFS','cliff']) : ['BACK TO SEA','cliff'])
+    : _flkVy>0.6 ? ['CLIMBING','flap'] : _flkVy<-0.6 ? ['DESCENDING','coast'] : ['CRUISING','coast'];
+  mb.textContent=act[0]; mb.className='badge '+act[1];
   const sk=document.getElementById('skimTag');
-  if(sk){ if(skimState==='cruise') sk.textContent='';
+  if(sk){ if(skimState==='cruise') sk.innerHTML = ridgeK>0 ? '<span style="color:#ffd18a">'+(ridgeWant ? (ridgeK<1 ? 'Heading up to soar the cliff edge' : 'Soaring the ridge lift along the cliffs') : 'Leaving the cliffs, back down to the sea')+'</span>. ' : '';
     else { const lbl={descend:'Dropping to the surface',skim:'Skimming the surface in ground effect',ascend:'Climbing back to cruise'}[skimState];
       sk.innerHTML='<span style="color:#8fe9df">'+lbl+'</span> (no passing until the dip completes). '; } }
+  if(sk) sk.innerHTML = skyTag() + sk.innerHTML;
   const W=P.mass*G;
   const setBar=(id,val,ref)=>{
     const f=document.getElementById('bar_'+id), v=document.getElementById('barv_'+id);
@@ -3457,10 +4132,10 @@ function updateHUD(){
   setBar('weight',-W,W*2);
   const badge=document.getElementById('stallBadge');
   const stallS=ema('stall',telemetry.stalled||0,0.05);
-  if(st.mode==='under' || st.mode==='swim'){ badge.textContent='IN WATER'; badge.className='badge ok'; }
-  else if(st.mode==='dive' && st.tuck>0.4){ badge.textContent='WINGS TUCKED'; badge.className='badge ok'; }
-  else if(stallS>10){ badge.textContent='STALL'; badge.className='badge stall'; }
-  else { badge.textContent='OK'; badge.className='badge ok'; }
+  if(stallS>10 && flying(st)){ badge.style.display=''; badge.textContent='STALL'; badge.className='badge stall'; badge.title='The bird in the panel has stalled its wings'; }
+  else if(nF===0){ badge.style.display='none'; }
+  else { badge.style.display=''; const fl=_flkFl>0.5; badge.textContent=fl ? 'FLAPPING' : 'GLIDING'; badge.className='badge '+(fl ? 'flap' : 'coast');
+    badge.title='Whether most of the flock is flapping or gliding ('+Math.round(100*_flkFl)+'% flapping)'; }
   // hint
   const hint=document.getElementById('hudHint');
   let msg='';
@@ -3692,7 +4367,7 @@ function stepFrame(dt){
     const sub=1/480; let acc=dt;
     let guard=0;
     while(acc>1e-6 && guard++<80){ const h=Math.min(sub,acc); integrate(h); acc-=h; }
-    updateBirdMesh(dt); updateFlow(dt); updateArrows(); updateWindField(); updatePocketFx(); updateFishFx(dt);
+    advanceSky(dt); updateBirdMesh(dt); updateFlow(dt); updateArrows(); updateWindField(); updatePocketFx(); updateFishFx(dt);
     // strips visualization opacity
     // charts
     chartData.push({lift:telemetry.lift||0, thrust:telemetry.thrust||0, alt:state.pos.y});
@@ -3754,7 +4429,7 @@ function sfxToggle(){
   else { sfx.master.gain.cancelScheduledValues(t); sfx.master.gain.setTargetAtTime(0, t, 0.08); setTimeout(()=>{ if(!sfx.on) c.suspend(); }, 400); }
   const b=document.getElementById('btnSound');
   b.classList.toggle('on', sfx.on);
-  b.title = sfx.on ? 'Sound is on — click to mute (M)' : 'Sound is off — click to hear wind, wingbeats, splashes and surf (M)';
+  b.dataset.tip = sfx.on ? 'Sound is on — click to mute (M)' : 'Sound is off — click to hear wind, wingbeats, splashes and surf (M)';
   b.setAttribute('aria-label', sfx.on ? 'Mute sound' : 'Turn sound on');
   document.getElementById('icoSoundOn').style.display = sfx.on ? '' : 'none';
   document.getElementById('icoSoundOff').style.display = sfx.on ? 'none' : '';
@@ -3849,6 +4524,7 @@ function toggleFullscreen(){
 }
 document.getElementById('btnFull').onclick=toggleFullscreen;
 document.getElementById('ctlHead').onclick=()=>{document.getElementById('controls').classList.toggle('collapsed');};
+document.querySelectorAll('.sub > .phead').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('collapsed'));
 function pickFocus(i){ focusLead=false; setFocus(i); }
 function setFocus(i){ if(!birds.length) return; focus=(i+birds.length)%birds.length; state=birds[focus]; telemetry=state.tel; }
 addEventListener('keydown',e=>{
