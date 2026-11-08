@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v26</title>
+<title>Bird Flight Lab v27</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -99,7 +99,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v26</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v27</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -526,6 +526,7 @@ function buildTerrain(){
   buildPiers(xs.map(x=>x+JETTY_X));
   buildShoreTrees(xs);
   buildCoastExtras(xs);
+  buildBeachgoers(xs);
 }
 // A timber pier on pilings, within the same footprint the birds treat as an obstacle (JETTY_W wide,
 // deck at JETTY_TOP, JETTY_LEN out to sea): two rows of pilings with cap beams, stringers, a planked deck
@@ -653,6 +654,62 @@ function updateBoats(t){
   for(const b of boats){ const p=b.userData.ph;
     b.position.y=0.12*Math.sin(t*1.1+p)+0.05*Math.sin(t*2.3+2*p);
     b.rotation.set(0.04*Math.sin(t*0.9+p), b.userData.yaw+0.08*Math.sin(t*0.13+p), 0.06*Math.sin(t*1.3+1.7*p), 'YXZ'); }
+}
+// People on the beach (v27), for scale: a few walk the firm sand near the water's edge (one or two with a dog
+// running about them), a few stand and look out to sea. Built from the hashed generator, never Math.random,
+// and moved by the clock alone, so they never touch a seeded run.
+const beachgoers=[];
+const _pMat={}; const _pm=c=>_pMat[c]||(_pMat[c]=new THREE.MeshStandardMaterial({color:c, roughness:0.9, flatShading:true}));
+const _pbox=(w,h,d,c,x,y,z,g)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), _pm(c)); m.position.set(x,y,z); g.add(m); return m; };
+const _limb=(w,len,d,c,x,y,z,g)=>{ const p=new THREE.Group(); p.position.set(x,y,z); _pbox(w,len,d,c,0,-len/2,0,p); g.add(p); return p; };
+function makePerson(rnd){                                // feet at the origin, facing +x, about 1.6-1.85 m tall
+  const g=new THREE.Group(), k=0.92+0.1*rnd(), pick=a=>a[Math.floor(rnd()*a.length)];
+  const skinC=pick([0xf1c7a5,0xe0ac85,0xc68a62,0x8d5a3b,0x5e3a26]), top=pick([0xd9382c,0x2f5d8a,0xf2f0ea,0x3d7a4f,0xe8b23a,0x6b4f8a,0x2b2b2b,0x8fb7d1]);
+  const legC=pick([0x2b3d5c,0x3a3a3a,0xb8a888,0x4a5a3a,0x1f2a40]), hairC=pick([0x2a1d14,0x5a3a20,0x9a7a4a,0xc9c2b4,0x111111]);
+  const hip=0.9*k;
+  const legs=[1,-1].map(sg=>{ const l=_limb(0.13,hip-0.05,0.14,legC,0,hip,sg*0.1,g); _pbox(0.24,0.08,0.12,0x2a2420,0.05,-hip+0.09,0,l); return l; });
+  _pbox(0.24,0.62*k,0.4,top,0,hip+0.3*k,0,g);                                         // torso
+  const arms=[1,-1].map(sg=>{ const a=_limb(0.09,0.6*k,0.1,top,0,hip+0.58*k,sg*0.25,g); _pbox(0.08,0.12,0.08,skinC,0,-0.64*k,0,a); return a; });
+  const hd=new THREE.Mesh(new THREE.SphereGeometry(0.115,10,8), _pm(skinC)); hd.position.set(0,hip+0.78*k,0); g.add(hd);
+  const hair=new THREE.Mesh(new THREE.SphereGeometry(0.122,10,6,0,Math.PI*2,0,1.5), _pm(hairC)); hair.position.copy(hd.position); hair.rotation.z=0.35; g.add(hair);
+  _pbox(0.1,0.14,0.15,skinC,0,hip+0.66*k,0,g);                                         // neck
+  return {g, legs, arms};
+}
+function makeDog(rnd){                                   // facing +x; a medium dog, ~0.55 m at the shoulder
+  const g=new THREE.Group(), c=[0x2a2018,0xc9a36a,0x7a4f2a,0xe8e0d0,0x4a4440][Math.floor(rnd()*5)], s=0.8+0.4*rnd();
+  _pbox(0.7*s,0.26*s,0.24*s,c,0,0.52*s,0,g);                                           // body
+  _pbox(0.22*s,0.22*s,0.2*s,c,0.42*s,0.7*s,0,g);                                       // head
+  _pbox(0.16*s,0.1*s,0.12*s,0x1a1410,0.58*s,0.65*s,0,g);                                // muzzle
+  for(const z of [-0.07,0.07]) _pbox(0.05*s,0.1*s,0.05*s,c,0.36*s,0.84*s,z*s,g);      // ears
+  const tail=_limb(0.05*s,0.3*s,0.05*s,c,-0.35*s,0.6*s,0,g); tail.rotation.z=2.3;
+  const legs=[[0.27,1],[0.27,-1],[-0.27,1],[-0.27,-1]].map(([x,sg])=>_limb(0.07*s,0.42*s,0.07*s,c,x*s,0.42*s,sg*0.08*s,g));
+  return {g, legs, tail};
+}
+function buildBeachgoers(tileXs){
+  for(const X of tileXs){ const rnd=_hashRng(2024+X);
+    const segs=[[10,135],[168,250],[280,350],[20,120],[175,340]];                    // walks that keep clear of the pier
+    for(let k=0;k<6;k++){ const p=makePerson(rnd), sg=segs[k%segs.length], walk=k<4, dog=walk && rnd()<0.6;
+      const b={p, X, a:sg[0], b:sg[1], walk, v:1.0+0.5*rnd(), ph:rnd()*500, inl:walk ? 3.5+3*rnd() : 6+5*rnd(),
+               lx:sg[0]+(sg[1]-sg[0])*rnd(), face:(rnd()-0.5)*1.2};
+      if(dog){ b.dog=makeDog(rnd); b.dph=rnd()*10; terrainGroup.add(b.dog.g); }
+      terrainGroup.add(p.g); beachgoers.push(b); }
+  }
+}
+function _onBeach(o, x, inl, yaw){ const z=COAST_Z+coastLine(x)+inl; o.position.set(x, terrainH(x,z), z); o.rotation.y=yaw; }
+function updateBeachgoers(t){
+  for(const b of beachgoers){ const P_=b.p;
+    if(!b.walk){ _onBeach(P_.g, b.X+b.lx, b.inl, Math.PI/2+b.face+0.25*Math.sin(t*0.07+b.ph));   // gazing out to sea (-z)
+      P_.arms[0].rotation.z=P_.arms[1].rotation.z=0; continue; }
+    const L=b.b-b.a, u=((b.v*t+b.ph)%(2*L)+2*L)%(2*L), out=u<L, s=out ? u : 2*L-u, dir=out ? 1 : -1, x=b.X+b.a+s;
+    const sw=Math.sin(t*b.v*2.6+b.ph);
+    _onBeach(P_.g, x, b.inl, dir>0 ? 0 : Math.PI);
+    P_.legs[0].rotation.z=0.45*sw; P_.legs[1].rotation.z=-0.45*sw; P_.arms[0].rotation.z=-0.35*sw; P_.arms[1].rotation.z=0.35*sw;
+    if(b.dog){ const D=b.dog, q=t*0.5+b.dph;                                       // the dog ranges ahead and about
+      const ox=dir*(1.8+2.2*Math.sin(q)), oz=-1.0+1.6*Math.sin(0.63*q+1), vx=dir*b.v+dir*2.2*0.5*Math.cos(q), vz=1.6*0.63*0.5*Math.cos(0.63*q+1);
+      _onBeach(D.g, x+ox, b.inl+oz, Math.atan2(-vz, vx));
+      const g=Math.sin(t*9+b.dph); D.legs[0].rotation.z=D.legs[3].rotation.z=0.5*g; D.legs[1].rotation.z=D.legs[2].rotation.z=-0.5*g;
+      D.tail.rotation.x=0.5*Math.sin(t*12+b.dph); }
+  }
 }
 buildTerrain();
 
@@ -787,8 +844,15 @@ function makeBirdMesh(lead){
   const shade=(c, under)=>bodyCol.copy(_cA.setHex(0xffffff)).lerp(_cB.setHex(under), clamp(-c*0.8+0.05,0,1));
   // body: rump (x=-0.42) to breast (+0.40), deepest and broadest just ahead of the wings
   const rB=0.15*Lb*(1+0.12*fold), wB=0.175*Lb;
-  const bodyG=_sweep(t=>[Lb*(-0.42+0.82*t), Lb*(0.015*Math.sin(Math.PI*t)-0.01)],
-    t=>{ const s=Math.pow(Math.sin(Math.PI*Math.pow(0.07+0.93*t,1.3)),0.42); return [rB*s, wB*s*(0.85+0.15*t), -0.1*rB*s]; }, 28, 16,
+  // The rump TAPERS into the tail (no blunt end): behind the wings the body narrows and flattens, its centre line
+  // lifting to meet the tail, so the tail feathers grow out of a wedge of feathers rather than a cut-off end.
+  const BX0=-0.6, BX1=0.40, rear=t=>clamp(1-t/0.42,0,1);  // body runs x = BX0..BX1 (x Lb); rear(t)=1 at the tail tip
+  const bodyPath=t=>{ const r=rear(t); return [Lb*(BX0+(BX1-BX0)*t), Lb*(0.015*Math.sin(Math.PI*t)-0.01+0.05*r*r)]; };
+  const bodyG=_sweep(bodyPath,
+    t=>{ const a=Math.pow(Math.sin(Math.PI*Math.pow(0.02+0.98*t,1.25)),0.42), r=rear(t),
+         tp=Math.pow(1-r,1.6);                            // taper toward the tail
+         const dep=a*(0.10+0.90*tp), wid=a*(0.28+0.72*Math.pow(1-r,1.1));
+         return [rB*dep, wB*wid*(0.85+0.15*t), -0.1*rB*dep]; }, 36, 16,
     (t,c)=>shade(c, 0xa59a8a));
   const torso=new THREE.Mesh(bodyG, skin); root.add(torso);
   skin.vertexColors=true;
@@ -821,12 +885,18 @@ function makeBirdMesh(lead){
   const neck=new THREE.Mesh(_sweep(nhPath, nhRad, 40, 14,
     (t,c)=>bodyCol.copy(_cA.setHex(0xfbf8f0)).lerp(_cB.setHex(0xeedb9a), clamp(c*1.3-0.6,0,1)*clamp((t-0.72)/0.1,0,1)*0.7)), headMat);
   head.add(neck);
-  // eyes: small and set into the side of the head, not stuck on it
-  const eyeMat=new THREE.MeshStandardMaterial({color:0x1a1612, roughness:0.25});
-  { const te=0.8, p=nhPath(te), q=nhPath(te+0.01), tx=q[0]-p[0], ty=q[1]-p[1], tn=Math.hypot(tx,ty), nx=-ty/tn, ny=tx/tn, [ry,rz]=nhRad(te), a=1.15;
-    for(const sg of [1,-1]){ const e=new THREE.Mesh(new THREE.SphereGeometry(hr*0.11,8,6), eyeMat);
-      e.position.set(p[0]+nx*ry*Math.cos(a)*0.93, p[1]+ny*ry*Math.cos(a)*0.93, sg*rz*Math.sin(a)*0.93); e.scale.set(1,1,0.6);
-      e.userData.noShadow=true; head.add(e); } }
+  // eyes: a pale iris with a dark pupil, set in a patch of bare pinkish skin -- the pelican's eye, not a black bead
+  const eyeMat=new THREE.MeshStandardMaterial({color:0xe6dcae, roughness:0.45});
+  const pupMat=new THREE.MeshStandardMaterial({color:0x14110e, roughness:0.35});
+  const ringMat=new THREE.MeshStandardMaterial({color:0xc9a99a, roughness:0.85});
+  { const te=0.79, p=nhPath(te), q=nhPath(te+0.01), tx=q[0]-p[0], ty=q[1]-p[1], tn=Math.hypot(tx,ty), nx=-ty/tn, ny=tx/tn, [ry,rz]=nhRad(te), a=1.2;
+    for(const sg of [1,-1]){
+      const on=(f,rad,mat,flat)=>{ const e=new THREE.Mesh(new THREE.SphereGeometry(rad,12,8), mat);
+        e.position.set(p[0]+nx*ry*Math.cos(a)*f, p[1]+ny*ry*Math.cos(a)*f, sg*rz*Math.sin(a)*f); e.scale.set(1,1,flat);
+        e.userData.noShadow=true; head.add(e); };
+      on(0.90, hr*0.27, ringMat, 0.32);                   // bare skin round the eye
+      on(0.93, hr*0.19, eyeMat, 0.45);                    // iris
+      on(1.00, hr*0.085, pupMat, 0.5); } }               // pupil
   // bill: long, flat and narrow with a hooked tip; for a pelican the pouch hangs beneath it
   const beakMat = new THREE.MeshStandardMaterial({color:(P.beakHex==null?0x6b5b47:P.beakHex), roughness:0.55});
   const beakLen = P.neckLen*0.42*bs + 0.15*hl;
@@ -856,13 +926,13 @@ function makeBirdMesh(lead){
   Math.random=_seeded;
 
   // tail: a short rounded fan of feathers from the rump, its trailing edge scalloped feather by feather
-  const tl = Math.min(P.tailLen*0.9, 0.3*Lb), tw = Math.min(Math.sqrt(P.tailArea)*1.1, 0.34*Lb), x0=-0.46*Lb;
+  const tl = Math.min(P.tailLen*0.9, 0.3*Lb), tw = Math.min(Math.sqrt(P.tailArea)*1.1, 0.34*Lb), x0=-0.5*Lb;
   const ts=new THREE.Shape(); ts.moveTo(x0, -0.05*Lb);
   const nf=9; for(let k=0;k<=nf;k++){ const a=(k/nf-0.5)*1.9, r=tl*(1-0.18*Math.abs(k/nf-0.5)*2);
     ts.lineTo(x0-r*Math.cos(a)*0.95, tw*0.5*Math.sin(a)/Math.sin(0.95));
     if(k<nf){ const a2=((k+0.5)/nf-0.5)*1.9; ts.lineTo(x0-r*0.88*Math.cos(a2), tw*0.5*Math.sin(a2)/Math.sin(0.95)); } }
   ts.lineTo(x0, 0.05*Lb);
-  const tg=new THREE.ShapeGeometry(ts); tg.rotateX(Math.PI/2);
+  const tg=new THREE.ShapeGeometry(ts); tg.rotateX(Math.PI/2); tg.translate(0, bodyPath((x0/Lb-BX0)/(BX1-BX0))[1], 0);   // root buried in the tapering rump
   const tail = new THREE.Mesh(tg, wingMat); root.add(tail);
   Math.random=_seededB; for(let i=0;i<BIRD_PART_DRAWS;i++) Math.random();   // the seeded draws the v25 parts used
 
@@ -3106,6 +3176,7 @@ function updateWorld(){
   skyMesh.position.set(p.x, 0, p.z);
   updateClouds(camera.position.x, camera.position.z);
   updateBoats(performance.now()*0.001);
+  updateBeachgoers(performance.now()*0.001);
   terrainGroup.position.x = Math.round(p.x/TERR_PERIOD)*TERR_PERIOD;   // seamless endless coast
 }
 // The orbit camera aims at the followed bird, but the side panels cover part of the screen, so shift the
