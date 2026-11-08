@@ -3948,13 +3948,36 @@ function _wSm(st, key, x, dt, rateMax, soft){
     s.v += (w*w*(g-s.x) + 2*w*(tv-s.v))*h; s.x += s.v*h; }
   return s.x;
 }
+// The BANK is drawn the same way (v29): the physics may change its commanded bank by 20-30 deg in a step (a new
+// bird to follow, a dodge, a change of mode), and its roll leveler carries the body there in a few substeps. Drawn,
+// the roll about the flight line follows the physics on a soft spring, so the bird rolls into and out of its turns.
+// Returns how far the drawn roll still lags the physics (rad), which the tail uses to twist into the roll.
+const _rbF=V3(), _rbU=V3(), _rbL=V3(), _rbC=V3(), _rbQ=new THREE.Quaternion();
+function _rollSm(st, q, extra, dt){
+  const f=_rbF.set(1,0,0).applyQuaternion(q), u=_rbU.set(0,1,0).applyQuaternion(q);
+  const lv=_rbL.set(0,1,0).addScaledVector(f,-f.y);
+  if(Math.abs(f.y)>0.95 || lv.lengthSq()<1e-4 || !(dt>0) || dt>0.25){ st._rb=null; return 0; }   // nose straight up/down: no "level" to roll from
+  lv.normalize();
+  let phi=Math.atan2(_rbC.crossVectors(lv,u).dot(f), lv.dot(u)) + extra;           // roll about the flight line
+  let s=st._rb;
+  if(!s){ s=st._rb={x:phi, v:0, raw:phi}; }
+  phi = s.raw + wrapPi(phi - s.raw); s.raw=phi;                                     // keep it continuous through +-180
+  const w=2*Math.PI*(st.mode==='dive' ? 2.6 : 1.4), n=dt>0.02?4:2, h=dt/n;
+  for(let i=0;i<n;i++){ s.v += (w*w*(phi-s.x) - 2*w*s.v)*h; s.x += s.v*h; }
+  _rbQ.setFromAxisAngle(f, s.x - (phi - extra));
+  m_tmpQ.copy(q).premultiply(_rbQ);
+  return phi - s.x;
+}
+const m_tmpQ=new THREE.Quaternion();
 function updateOneBird(st){
   const m=st.mesh; if(!m) return;
   m.root.position.copy(st.pos);
   if(st.mode==='swim' || (st.mode==='takeoff' && st.pos.y<0.3)) m.root.position.y += waveHJS(st.pos.x, st.pos.z);   // ride the drawn swell
-  m.root.quaternion.copy(st.quat);
+  // physics attitude, plus the cosmetic lean into a lateral correction (physics stays wings-level), with the roll eased
+  const lag=_rollSm(st, st.quat, -(st.cmdRoll||0), _meshDt||1/60);
+  if(st._rb) m.root.quaternion.copy(m_tmpQ);
+  else { m.root.quaternion.copy(st.quat); if(st.cmdRoll) m.root.rotateX(-st.cmdRoll); }
   m.root.scale.setScalar(st._sz||1);
-  if(st.cmdRoll) m.root.rotateX(-st.cmdRoll);   // cosmetic lean into a lateral correction (physics stays wings-level)
   // flap at shoulder, fold at elbow, twist each segment -- matching the physics
   const dtM=_meshDt||1/60;
   const be=_wSm(st,'_sBe', st.beta+P.dihedral*DEG+(st.wRaise||0), dtM), sig=_wSm(st,'_sSg', (st.tuck||0)*P.tuckSweep*DEG, dtM);
@@ -3987,7 +4010,10 @@ function updateOneBird(st){
     fg.rotation.set(-sgn*lift, -sgn*fan, 0);
   });
   setFea(m.wingRtips,+1); setFea(m.wingLtips,-1);
-  m.tail.rotation.z=P.tailIncidence*DEG;
+  // the tail twists about the body's long axis to help the roll along: into the roll while the body is still
+  // catching up, and a touch into a held bank (eased, so it never snaps either)
+  const tw=_wSm(st,'_sTw', clamp(1.1*lag + 0.3*(st._rb ? st._rb.x : 0), -0.5, 0.5), dtM, 0, true);
+  m.tail.rotation.set(tw, 0, P.tailIncidence*DEG);
   // wingtip wake trails (each traces a shed vortex core)
   if(P.vTrail){
     const L2=P.span*(1-P.innerFrac);
