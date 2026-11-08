@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v25</title>
+<title>Bird Flight Lab v26</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -99,7 +99,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v25</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v26</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <!-- sections injected here -->
     <div id="secHost"></div>
   </div>
@@ -254,11 +254,12 @@ const P = {
   dropSchool:0,                // click the water to put a school there
   diveSlowmo:0,                // slow the sim while the bird you're watching dives
   // COME AND GO (v25): birds drop out of the flock to rest or wander off; resting birds join flocks going by
+  smoothFlap:1,                // v26: flap bursts ease in from a downstroke, last 2+ beats and ease out onto the glide
   comeGo:1,
   leaveEvery:45,               // s: about how often a bird leaves the flock
   minFlock:6,                  // nobody leaves a flock this small
   restMin:20,                  // s: a bird rests at least this long before it will join a passing flock
-  joinRange:90,                // m: a resting bird takes off to join a flock passing this close
+  joinRange:28,                // m: a resting bird takes off once the front of a passing flock is this close behind it
   outsiders:2,                 // birds that start out resting along the coast ahead, not in the flock
   schoolEvery:60,              // s: a new school turns up about this often (auto)
   schoolFish:50, schoolRadius:6, schoolLife:240,
@@ -428,8 +429,8 @@ const water = new THREE.Mesh(waterGeo, waterMat);
 water.rotation.x = -Math.PI/2; water.position.y = 0; water.renderOrder=-2; scene.add(water);
 
 // ----- shoreline: a real noise HEIGHTFIELD (the approach from Will's threejs-world) instead of a
-// flat wall -- underwater slope -> beach -> foothills -> snow-capped peaks, flat-shaded and coloured
-// by elevation. The height field is PERIODIC in x (period TERR_PERIOD), so the group can snap by
+// flat wall -- underwater slope -> beach -> sandstone bluffs -> clifftop scrub and hills, flat-shaded and coloured
+// by what the ground is (see terrainColor). The height field is PERIODIC in x (period TERR_PERIOD), so the group can snap by
 // whole periods as the flock flies and the coast is seamless & endless with no per-frame rebuild.
 const terrainGroup = new THREE.Group(); scene.add(terrainGroup);
 const _tk = 2*Math.PI/TERR_PERIOD;
@@ -447,18 +448,31 @@ const FOLLOW_F=0.8;
 function coastFollow(x){ return FOLLOW_F*(10*Math.sin(_tk*x+0.6) + 4*Math.sin(2*_tk*x+2.1)); }
 function coastFollowSlope(x){ return FOLLOW_F*(10*_tk*Math.cos(_tk*x+0.6) + 8*_tk*Math.cos(2*_tk*x+2.1)); }
 const wrapPi=(a)=>{ while(a>Math.PI)a-=2*Math.PI; while(a<-Math.PI)a+=2*Math.PI; return a; };
+// Fort Funston-style bluffs (v26): a sand beach, then a sheer sandstone cliff 25-55 m high, fluted by rain
+// runnels and cut here and there by a gully, topped with ice plant and scrub; low hills roll away behind.
+// The beach itself (the first 10+ m above the waterline) is the same as before.
+const _bl=x=>19 + 5*Math.sin(3*_tk*x+1.0) + 3*Math.sin(7*_tk*x+2.0);              // where the cliff foot is
+const _gully=x=>Math.pow(Math.max(0, Math.sin(3*_tk*x+2.7)), 12);
+function _cliff(x){                                     // -> [foot, face width, height] at x
+  const g=Math.min(1,_gully(x)), H=(40 + 9*Math.sin(2*_tk*x+0.5) + 6*Math.sin(5*_tk*x+1.2))*(1-0.6*g);
+  const rill=2.2*Math.sin(5*_tk*x+0.8) + 0.8*Math.sin(23*_tk*x+0.3) + 0.6*Math.sin(37*_tk*x+1.9) + 0.45*Math.sin(53*_tk*x+4.1);
+  return [_bl(x) + rill*(1-g) + 6*g, 0.42*H + 30*g, H];
+}
 function terrainH(x,z){
   const inland = z - COAST_Z - coastLine(x);            // shore position shifts with x -> coves & points
-  const base = inland<0 ? inland*0.30 : (0.15*inland + 0.0018*inland*inland);   // cross-shore profile
-  const amp  = clamp((inland-10)/50, 0, 1) * 20;                                // smooth beach, jagged peaks
-  // every x term is an integer harmonic of _tk => exactly periodic in x (seamless tiling)
-  const n = Math.sin(_tk*x + z*0.04 + 0.3)*1.0
-          + Math.sin(2*_tk*x + z*0.02 + 1.7)*0.5
-          + Math.sin(3*_tk*x + 3.1)*0.33
-          + Math.sin(5*_tk*x + z*0.03 + 0.6)*0.2
-          + Math.sin(8*_tk*x + 2.2)*0.12
-          + Math.sin(13*_tk*x + 5.0)*0.07;
-  return base + amp*n*0.5;
+  if(inland<0) return inland*0.30;                      // the sea floor
+  const beach = 0.15*inland + 0.0018*inland*inland;
+  const [foot, W, H]=_cliff(x); if(inland<=foot) return beach;
+  const b0=0.15*foot + 0.0018*foot*foot, u=(inland-foot)/W;
+  if(u<1) return b0 + (H-b0)*(0.12*u + 0.88*Math.pow(u, 1.7));   // a talus apron, steepening to the lip
+  const top=inland-foot-W;                              // the clifftop: gentle dunes rising inland, then hills
+  return H + 0.05*top + 1.6*Math.sin(0.09*top + 11*_tk*x) * Math.min(1, top/12)
+       + 40*clamp((top-60)/110, 0, 1)**1.5 * (0.75 + 0.25*Math.sin(2*_tk*x + 0.03*z) + 0.15*Math.sin(6*_tk*x + 1.1));
+}
+// what the land is like at (x,z): 0 beach, 1 cliff face, 2 clifftop
+function terrainZone(x,z){
+  const inland=z - COAST_Z - coastLine(x), [foot, W]=_cliff(x);
+  return inland<=foot ? 0 : inland<foot+W ? 1 : 2;
 }
 // The jetties (one per tile period) and what a bird flying over (x,z) has to clear: the ground -- beach,
 // foothills, peaks -- or a jetty's deck, whichever is higher. Open sea is 0.
@@ -469,25 +483,37 @@ function obstacleH(x,z){
   if(Math.abs(dx)<0.5*JETTY_W){ const sh=COAST_Z+coastLine(x-dx); if(z>sh-JETTY_LEN && z<sh+2) h=Math.max(h, JETTY_TOP); }
   return h;
 }
-const _tc=new THREE.Color();
-function terrainColor(h){
-  if(h<1.2)      _tc.setHex(0xcdbe97);   // sand
-  else if(h<9)   _tc.setHex(0x5f7f4c);   // grass
-  else if(h<26)  _tc.setHex(0x6a6459);   // rock
-  else if(h<48)  _tc.setHex(0x585550);   // dark rock
-  else           _tc.setHex(0xe9eef3);   // snow
-  return _tc;
+const _tc=new THREE.Color(), _tc2=new THREE.Color();
+const _veg=(x,z)=>Math.sin(0.21*x+0.13*z)+0.7*Math.sin(0.47*x-0.31*z+1.3)+0.5*Math.sin(1.1*x+0.7*z+2.1);   // patchy cover
+function terrainColor(x,z,h,rnd){
+  const zone=terrainZone(x,z), inland=z-COAST_Z-coastLine(x), j=(rnd()-0.5)*0.05;
+  if(zone===0){                                           // dark wet sand by the water, paler dry sand up the beach
+    _tc.setHex(0x7d7362).lerp(_tc2.setHex(0xab9a7a), clamp((inland-2)/7, 0, 1));
+    if(inland>3 && _veg(x,z)>1.5) _tc.lerp(_tc2.setHex(0x9a8d74), 0.4);              // drifts of darker sand
+  } else if(zone===1){                                    // sandstone: tan strata with pale bands, darker low down
+    const v=h*0.8 + 2.0*Math.sin(x*0.013) + 0.8*Math.sin(x*0.051);                   // strata dip gently along the coast
+    _tc.setHex(0xd6a768).lerp(_tc2.setHex(0xb98652), 0.5+0.5*Math.sin(v));
+    if(Math.sin(v*0.29+1.0)>0.9) _tc.lerp(_tc2.setHex(0xeedcb6), 0.8);              // the pale beds
+    _tc.lerp(_tc2.setHex(0xc4955c), clamp((h-30)/12, 0, 0.6));                       // more orange up top
+    _tc.lerp(_tc2.setHex(0x9e8c70), clamp(1-h/10, 0, 0.6));                          // grey sandy talus at the foot
+    if(_veg(x,z)>1.7 && h>6) _tc.lerp(_tc2.setHex(rnd()<0.6 ? 0x6f8f45 : 0x8c5a48), 0.85);   // ice plant clinging on
+  } else {                                                // the top: ice plant (green, red in places), scrub and sand
+    const v=_veg(x,z);
+    _tc.setHex(v>0.9 ? 0x87604e : v>-0.6 ? 0x6e8d46 : v>-1.3 ? 0x8a8b55 : 0xc7b088);
+    _tc.lerp(_tc2.setHex(0x7d8660), clamp((inland-150)/80, 0, 0.5));                  // hazy distant hills
+  }
+  return _tc.offsetHSL(0, 0, j);
 }
 function buildTerrain(){
   while(terrainGroup.children.length){ const c=terrainGroup.children.pop(); c.geometry&&c.geometry.dispose(); }
-  const X0=-2*TERR_PERIOD, X1=2*TERR_PERIOD, dx=10, dz=6;
+  const X0=-2*TERR_PERIOD, X1=2*TERR_PERIOD, dx=2.5, rnd=_hashRng(31337);
+  const zs=[]; for(let z=Z_NEAR; z<Z_FAR; z+= z<40 ? 2 : z<118 ? 1 : z<165 ? 2 : 8) zs.push(z); zs.push(Z_FAR);   // fine across the cliffs
   const P=[], C=[];
-  const vert=(x,z)=>{ const h=terrainH(x,z); P.push(x,h,z);
-    const c=terrainColor(h + (Math.random()*1.6-0.8)); C.push(c.r,c.g,c.b); };   // jitter the band edges
+  const vert=(x,z)=>{ const h=terrainH(x,z); P.push(x,h,z); const c=terrainColor(x,z,h,rnd); C.push(c.r,c.g,c.b); };
   for(let x=X0;x<X1;x+=dx){
-    for(let z=Z_NEAR;z<Z_FAR;z+=dz){
-      vert(x,z); vert(x,z+dz); vert(x+dx,z+dz);      // two CCW tris per cell (normal up)
-      vert(x,z); vert(x+dx,z+dz); vert(x+dx,z);
+    for(let k=0;k+1<zs.length;k++){ const z=zs[k], z2=zs[k+1];
+      vert(x,z); vert(x,z2); vert(x+dx,z2);          // two CCW tris per cell (normal up)
+      vert(x,z); vert(x+dx,z2); vert(x+dx,z);
     }
   }
   const g=new THREE.BufferGeometry();
@@ -541,25 +567,25 @@ function buildPiers(xList){
 function buildShoreTrees(tileXs){
   const rnd=_hashRng(777), conif=[], broad=[], trunks=[], bush=[];
   const grove=x=>Math.sin(5*_tk*x+1.3)*0.6+Math.sin(9*_tk*x+0.4)*0.4+Math.sin(17*_tk*x+2.0)*0.25;   // periodic in x
-  for(let i=0;i<900;i++){
-    const x=rnd()*TERR_PERIOD, inland=2+rnd()*55, z=COAST_Z+coastLine(x)+inland, h=terrainH(x,z), g=grove(x);
+  for(let i=0;i<1400;i++){
+    const x=rnd()*TERR_PERIOD, inland=2+rnd()*130, z=COAST_Z+coastLine(x)+inland, h=terrainH(x,z), g=grove(x), zone=terrainZone(x,z);
     if(Math.abs(x-JETTY_X)<6) continue;
-    const k=rnd(), sz=0.7+0.6*rnd(), yaw=rnd()*6.28;
-    if(inland<26 && h>0.9 && h<7 && g>0.05 && k<0.55){                          // bushes along the back of the beach
-      bush.push([x, h+0.25*sz, z, 1.3*sz, 0.75*sz, 1.1*sz, 0, yaw, 0.12, (rnd()-0.5)*0.03]);
-    } else if(inland>8 && h>1.6 && h<15 && g>0.35 && k<0.6){                   // trees, in groves
-      const conifer=rnd()<0.55, th=conifer ? 1.2*sz : 2.2*sz;
-      trunks.push([x, h+0.5*th-0.2, z, sz, th+0.2, sz, 0, yaw, 0.1]);
-      if(conifer) conif.push([x, h+th+2.4*sz-0.3, z, 1.5*sz, 5*sz, 1.5*sz, 0, yaw, 0.1, (rnd()-0.5)*0.03]);
-      else broad.push([x, h+th+1.3*sz, z, 2.1*sz, 1.8*sz, 2.1*sz, 0, yaw, 0.14, (rnd()-0.5)*0.05]);
+    const k=rnd(), sz=0.7+0.6*rnd(), yaw=rnd()*6.28, back=inland-_cliff(x)[0]-_cliff(x)[1];
+    if(zone===2 && back>3 && k<0.5){                                           // coyote brush and lupine on the bluff top
+      bush.push([x, h+0.2*sz, z, 1.5*sz, 0.6*sz, 1.3*sz, 0, yaw, 0.14, (rnd()-0.5)*0.04]);
+    } else if(zone===2 && back>25 && g>0.3 && k<0.8){                          // wind-shaped cypress groves, set well back
+      const conifer=rnd()<0.3, th=conifer ? 1.4*sz : 2.4*sz;
+      trunks.push([x, h+0.5*th-0.2, z, sz*1.2, th+0.2, sz*1.2, 0, yaw, 0.1]);
+      if(conifer) conif.push([x, h+th+2.4*sz-0.3, z, 1.6*sz, 5*sz, 1.6*sz, 0, yaw, 0.1, (rnd()-0.5)*0.03]);
+      else broad.push([x, h+th+1.0*sz, z, 3.4*sz, 1.5*sz, 2.6*sz, 0, yaw, 0.12, (rnd()-0.5)*0.04]);   // flat-topped, wind-sheared
     }
   }
   const rep=l=>tileXs.flatMap(X=>l.map(it=>{ const c=it.slice(); c[0]+=X; return c; }));
   const leaf=()=>new THREE.MeshStandardMaterial({color:0xffffff, roughness:1, flatShading:true});
   _instanced(new THREE.CylinderGeometry(0.12,0.2,1,5), leaf(), rep(trunks), rnd, 0x5a4331);
   _instanced(new THREE.ConeGeometry(1,1,7), leaf(), rep(conif), rnd, 0x2e5634);
-  _instanced(new THREE.IcosahedronGeometry(1,0), leaf(), rep(broad), rnd, 0x4f7d38);
-  _instanced(new THREE.IcosahedronGeometry(1,0), leaf(), rep(bush), rnd, 0x6c9443);
+  _instanced(new THREE.IcosahedronGeometry(1,0), leaf(), rep(broad), rnd, 0x3f5f33);
+  _instanced(new THREE.IcosahedronGeometry(1,0), leaf(), rep(bush), rnd, 0x6a7a45);
 }
 // Lifeguard towers on the beach and boats riding at anchor offshore (v25). Like the piers, they repeat
 // every tile; the boats are far enough out (100-200 m) to stay clear of the flock's line along the coast.
@@ -717,6 +743,26 @@ function buildWingSeg(sign, gf0, gf1){
   return g;
 }
 
+// A tube swept along a curve in the bird's mid-plane (x forward, y up): path(t) -> [x,y]; rad(t) -> [half-depth,
+// half-width, shift of the section along its up-normal]; col(t, c) -> a vertex colour, c = +1 on top, -1 underneath.
+// The ends are capped, so a profile that tapers to zero closes to a point.
+function _sweep(path, rad, nT, nA, col){
+  const pos=[], cols=[], idx=[], e=1e-3;
+  for(let i=0;i<=nT;i++){ const t=i/nT, p=path(t), q=path(Math.min(1,t+e)), o=path(Math.max(0,t-e));
+    let tx=q[0]-o[0], ty=q[1]-o[1]; const tn=Math.hypot(tx,ty)||1; tx/=tn; ty/=tn;
+    const nx=-ty, ny=tx, [ry,rz,dy]=rad(t);
+    for(let j=0;j<nA;j++){ const a=2*Math.PI*j/nA, c=Math.cos(a), s=Math.sin(a);
+      pos.push(p[0]+nx*(ry*c+(dy||0)), p[1]+ny*(ry*c+(dy||0)), rz*s);
+      if(col){ const k=col(t,c); cols.push(k.r,k.g,k.b); } } }
+  for(let i=0;i<nT;i++) for(let j=0;j<nA;j++){ const A=i*nA+j, B=i*nA+(j+1)%nA, C=B+nA, D=A+nA; idx.push(A,B,C, A,C,D); }
+  for(const [i,end] of [[0,false],[nT,true]]){ const p=path(i/nT), ci=pos.length/3; pos.push(p[0],p[1],0);
+    if(col){ const k=col(i/nT,0); cols.push(k.r,k.g,k.b); }
+    for(let j=0;j<nA;j++){ const A=i*nA+j, B=i*nA+(j+1)%nA; end ? idx.push(ci,A,B) : idx.push(ci,B,A); } }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  if(col) g.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
+  g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+const BIRD_PART_DRAWS=56;   // 14 three.js objects x 4 draws each for a uuid (measured on v25)
 // Build ONE bird's mesh (returns a refs object). `lead` tints the lead bird.
 function makeBirdMesh(lead){
   const root = new THREE.Group();
@@ -727,39 +773,72 @@ function makeBirdMesh(lead){
   const wingMat = new THREE.MeshStandardMaterial({color:0xcfc3ad, roughness:0.7, side:THREE.DoubleSide, transparent:true, opacity:0.94});
   const wingMat2 = wingMat.clone(); wingMat2.color = new THREE.Color(0xbdb096);
 
-  const hs=P.headScale||1, bs=P.beakScale||1, fold=clamp(P.neckFold||0,0,1);
-  // torso: plumper and a touch shorter when the neck is folded (pelican) -> reads as a bird, not a blimp
+  // BODY, NECK, HEAD, BILL, POUCH, TAIL (v26): each one swept along a curve in the bird's mid-plane with its own
+  // radius profile. The body is a deep, broad egg (full breast, blunt rump under the tail); the neck and head are
+  // ONE tube, rising out of the breast, bulging forward at the crop, folding back up in an S and swelling into the
+  // head, so there are no seams -- it's all under feathers; a low fairing over the back covers the wing roots.
+  // These parts are built on the browser's own random numbers (three.js draws a uuid for every object) and
+  // then exactly as many seeded draws are spent as the old parts used, so seeded runs replay unchanged.
+  const _seededB=Math.random; Math.random=_rand0;
+  const hs=P.headScale||1, bs=P.beakScale||1, fold=clamp(P.neckFold||0,0,1), Lb=bodyLen;
   const torsoLen = bodyLen*(1 - 0.22*fold);
-  const torso = new THREE.Mesh(new THREE.SphereGeometry(1,16,12), skin);
-  torso.scale.set(torsoLen, bodyR*(1+0.28*fold), bodyR*0.92); root.add(torso);
-
-  // HEAD + FOLDED NECK. Pelicans fly with the neck drawn back, the head resting on the shoulders and
-  // the long deep bill projecting forward -- so at high neckFold the head sits just above the front of
-  // the body (not out on a heron neck), joined by a short kinked neck.
+  const sX=torsoLen*0.5, sY=bodyR*0.5;                    // the head pivots here (tips down to drain, back to swallow)
+  const bodyCol=new THREE.Color(), _cA=new THREE.Color(), _cB=new THREE.Color();
+  const shade=(c, under)=>bodyCol.copy(_cA.setHex(0xffffff)).lerp(_cB.setHex(under), clamp(-c*0.8+0.05,0,1));
+  // body: rump (x=-0.42) to breast (+0.40), deepest and broadest just ahead of the wings
+  const rB=0.15*Lb*(1+0.12*fold), wB=0.175*Lb;
+  const bodyG=_sweep(t=>[Lb*(-0.42+0.82*t), Lb*(0.015*Math.sin(Math.PI*t)-0.01)],
+    t=>{ const s=Math.pow(Math.sin(Math.PI*Math.pow(0.07+0.93*t,1.3)),0.42); return [rB*s, wB*s*(0.85+0.15*t), -0.1*rB*s]; }, 28, 16,
+    (t,c)=>shade(c, 0xa59a8a));
+  const torso=new THREE.Mesh(bodyG, skin); root.add(torso);
+  skin.vertexColors=true;
+  // a low, broad fairing over the back that carries the wing roots, so the wings grow out of the body
+  const shY=0.8*rB, shZ=0.55*wB;                          // (the wing roots sit on the body, not beside it)
+  const fair=new THREE.Mesh(_sweep(t=>[Lb*(-0.28+0.6*t), shY-0.045*Lb],
+    t=>{ const s=Math.pow(Math.sin(Math.PI*t),0.6); return [0.05*Lb*s, 0.85*wB*s, 0]; }, 14, 14, (t,c)=>shade(c, 0xd8d0c2)), skin);
+  root.add(fair);
+  const headMat=new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.8, vertexColors:true});
   const head = new THREE.Group();
-  const headR = bodyR*0.55*hs;
-  const frontX = torsoLen*0.9;
-  const headX = frontX*0.72 + P.neckLen*(1-fold);        // retracted toward the shoulders when folded
-  const headY = bodyR*(0.55 + 0.85*fold);                // riding up on the shoulders when folded
-  // short kinked neck from the shoulders up to the head
-  const sX=torsoLen*0.5, sY=bodyR*0.5, ndx=headX-sX, ndy=headY-sY, nlen=Math.max(Math.hypot(ndx,ndy),0.02);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(headR*0.6, bodyR*0.74, nlen, 8), skin);
-  neck.position.set((sX+headX)/2, (sY+headY)/2, 0);
-  neck.rotation.z = Math.atan2(ndy,ndx) - Math.PI/2; head.add(neck);
-  // head
-  const hd = new THREE.Mesh(new THREE.SphereGeometry(headR,12,10), skin);
-  hd.position.set(headX, headY, 0); head.add(hd);
-  // long, deep bill (orange for a pelican), projecting forward and angled a touch down
-  const beakMat = new THREE.MeshStandardMaterial({color:(P.beakHex==null?0x6b5b47:P.beakHex), roughness:0.6});
-  const beakLen = P.neckLen*0.55*bs;
-  const beak = new THREE.Mesh(new THREE.ConeGeometry(headR*0.48, beakLen, 10), beakMat);
-  beak.rotation.z = -Math.PI/2; beak.position.set(headX + headR*0.55 + beakLen*0.5, headY - headR*0.12, 0);
+  const hr=0.068*Lb*hs;                                   // head half-depth
+  const billA = fold>0.4 ? -0.24 : -0.08;                 // the bill points forward and a touch down
+  const ca=Math.cos(billA), sa=Math.sin(billA), hl=0.2*Lb*hs;
+  // the neck's S (a cubic) then the head (a straight run along the bill); pelicans fold it, others reach forward
+  const hc = fold>0.4 ? [Lb*0.56, Lb*(0.16+0.08*fold)] : [Lb*0.44+P.neckLen*0.9, Lb*0.07];   // head centre
+  const hb=[hc[0]-0.5*hl*ca, hc[1]-0.5*hl*sa];           // back of the head, where the neck arrives
+  const n0=[Lb*0.18, Lb*0.0];
+  const n1=fold>0.4 ? [Lb*0.66, Lb*-0.04] : [Lb*0.36+P.neckLen*0.3, Lb*0.03];
+  const n2=fold>0.4 ? [hb[0]-Lb*0.2, hb[1]+Lb*0.02] : [hb[0]-P.neckLen*0.3, hb[1]];
+  const SPLIT=0.68;                                       // where along the tube the neck becomes the head
+  const nhPath=t=>{
+    if(t<=SPLIT){ const v=t/SPLIT, u=1-v, a=u*u*u, b=3*u*u*v, c=3*u*v*v, d=v*v*v;
+      return [a*n0[0]+b*n1[0]+c*n2[0]+d*hb[0], a*n0[1]+b*n1[1]+c*n2[1]+d*hb[1]]; }
+    const v=(t-SPLIT)/(1-SPLIT); return [hb[0]+hl*v*ca, hb[1]+hl*v*sa]; };
+  // radius keyframes along the tube: breast-thick base, crop, slim upper neck, round skull, narrowing to the bill
+  const KR=[[0,0.15*Lb],[0.22,0.095*Lb],[0.5,0.062*Lb],[SPLIT,0.07*Lb*hs],[0.8,hr],[0.93,0.75*hr],[1,0.32*hr]];
+  const kr=t=>{ for(let i=1;i<KR.length;i++) if(t<=KR[i][0]){ const [t0,r0]=KR[i-1], [t1,r1]=KR[i], w=(t-t0)/(t1-t0);
+    return r0+(r1-r0)*(0.5-0.5*Math.cos(Math.PI*w)); } return KR[KR.length-1][1]; };
+  const nhRad=t=>{ const r=kr(t); return [r, r*(t<0.3 ? 1.05 : 0.86), 0]; };
+  const neck=new THREE.Mesh(_sweep(nhPath, nhRad, 40, 14,
+    (t,c)=>bodyCol.copy(_cA.setHex(0xfbf8f0)).lerp(_cB.setHex(0xeedb9a), clamp(c*1.3-0.6,0,1)*clamp((t-0.72)/0.1,0,1)*0.7)), headMat);
+  head.add(neck);
+  // eyes: small and set into the side of the head, not stuck on it
+  const eyeMat=new THREE.MeshStandardMaterial({color:0x1a1612, roughness:0.25});
+  { const te=0.8, p=nhPath(te), q=nhPath(te+0.01), tx=q[0]-p[0], ty=q[1]-p[1], tn=Math.hypot(tx,ty), nx=-ty/tn, ny=tx/tn, [ry,rz]=nhRad(te), a=1.15;
+    for(const sg of [1,-1]){ const e=new THREE.Mesh(new THREE.SphereGeometry(hr*0.11,8,6), eyeMat);
+      e.position.set(p[0]+nx*ry*Math.cos(a)*0.93, p[1]+ny*ry*Math.cos(a)*0.93, sg*rz*Math.sin(a)*0.93); e.scale.set(1,1,0.6);
+      e.userData.noShadow=true; head.add(e); } }
+  // bill: long, flat and narrow with a hooked tip; for a pelican the pouch hangs beneath it
+  const beakMat = new THREE.MeshStandardMaterial({color:(P.beakHex==null?0x6b5b47:P.beakHex), roughness:0.55});
+  const beakLen = P.neckLen*0.42*bs + 0.15*hl;
+  const b0=[hb[0]+0.9*hl*ca, hb[1]+0.9*hl*sa+hr*0.05], pelican = fold>0.4 || bs>1.6;
+  const billPath=t=>{ const d=beakLen*t, hook=Math.max(0,t-0.9)*Math.max(0,t-0.9)*beakLen*6; return [b0[0]+d*ca+hook*sa*0.5, b0[1]+d*sa-hook]; };
+  const bw=pelican ? hr*0.42 : hr*0.38;
+  const beak=new THREE.Mesh(_sweep(billPath, t=>{ const k=t<0.96?1:(1-t)/0.04; return pelican ? [hr*0.2*(1-0.45*t)*k+0.002, bw*(1-0.3*t)*k+0.002, 0] : [hr*0.35*(1-t)+0.002, hr*0.35*(1-t)+0.002, 0]; }, 16, 8), beakMat);
   head.add(beak);
-  // gular pouch: a soft warm bulge slung under the base of the bill (pelican signature)
-  if(fold>0.4 || bs>1.6){
-    const pouch = new THREE.Mesh(new THREE.SphereGeometry(1,10,8), beakMat);
-    pouch.scale.set(beakLen*0.34, headR*0.44, headR*0.4);
-    pouch.position.set(headX + headR*0.5 + beakLen*0.26, headY - headR*0.52, 0);
+  if(pelican){                                            // gular pouch: a soft, darker sack slung from the lower jaw
+    const pm=new THREE.MeshStandardMaterial({color:new THREE.Color(P.beakHex==null?0x6b5b47:P.beakHex).multiplyScalar(0.62), roughness:0.8});
+    const pouch=new THREE.Mesh(_sweep(t=>{ const p=billPath(0.03+0.8*t); return [p[0]-hr*0.05, p[1]-hr*0.22]; },
+      t=>{ const s=Math.pow(Math.sin(Math.PI*t),0.7)*(1-0.55*t); return [hr*0.62*s+0.002, bw*0.85*s+0.002, -hr*0.5*s]; }, 16, 10), pm);
     head.add(pouch);
   }
   // pivot the head at the shoulders, so it can tip down (draining the pouch) and back (swallowing)
@@ -776,13 +855,18 @@ function makeBirdMesh(lead){
     const fm=new THREE.Mesh(fgeo, footMat); fm.userData.noShadow=true; leg.add(fm); leg.visible=false; root.add(leg); feet.push(leg); }
   Math.random=_seeded;
 
-  const tg = new THREE.BufferGeometry();
-  const tl = P.tailLen*0.9, tw = Math.sqrt(P.tailArea)*1.1;
-  tg.setAttribute('position', new THREE.Float32BufferAttribute([-bodyLen*0.7,0,0, -bodyLen*0.7-tl,0,tw*0.5, -bodyLen*0.7-tl,0,-tw*0.5],3));
-  tg.computeVertexNormals();
+  // tail: a short rounded fan of feathers from the rump, its trailing edge scalloped feather by feather
+  const tl = Math.min(P.tailLen*0.9, 0.3*Lb), tw = Math.min(Math.sqrt(P.tailArea)*1.1, 0.34*Lb), x0=-0.46*Lb;
+  const ts=new THREE.Shape(); ts.moveTo(x0, -0.05*Lb);
+  const nf=9; for(let k=0;k<=nf;k++){ const a=(k/nf-0.5)*1.9, r=tl*(1-0.18*Math.abs(k/nf-0.5)*2);
+    ts.lineTo(x0-r*Math.cos(a)*0.95, tw*0.5*Math.sin(a)/Math.sin(0.95));
+    if(k<nf){ const a2=((k+0.5)/nf-0.5)*1.9; ts.lineTo(x0-r*0.88*Math.cos(a2), tw*0.5*Math.sin(a2)/Math.sin(0.95)); } }
+  ts.lineTo(x0, 0.05*Lb);
+  const tg=new THREE.ShapeGeometry(ts); tg.rotateX(Math.PI/2);
   const tail = new THREE.Mesh(tg, wingMat); root.add(tail);
+  Math.random=_seededB; for(let i=0;i<BIRD_PART_DRAWS;i++) Math.random();   // the seeded draws the v25 parts used
 
-  const shoulderX = bodyLen*0.15, shoulderY = bodyR*0.55, shoulderZ = bodyR*0.7, L1 = P.span*P.innerFrac;
+  const shoulderX = bodyLen*0.15, shoulderY = shY, shoulderZ = shZ, L1 = P.span*P.innerFrac;
   function mkWing(sign){
     const shoulder=new THREE.Group(); shoulder.position.set(shoulderX, shoulderY, sign*shoulderZ);
     shoulder.rotation.order='YXZ';                          // raise/flap first, then sweep back (tuck)
@@ -996,7 +1080,16 @@ function makeBirdState(x0, z0){
 // side = which side of the bird it drafts it has settled on.
 function describeFlock(){
   if(!birds.length) return;
-  const out=b=>P.comeGo && !flying(b);                   // resting / leaving birds aren't part of the flock's shape
+  // With come-and-go, the flock is the biggest bunch of flying birds (each within 30 m of another in
+  // it). Resting, leaving, and lone birds out ahead or straggling behind aren't part of its shape, and
+  // none of them can be its lead: a bird with nobody behind it isn't leading anything.
+  if(P.comeGo){ const F=[]; for(const b of birds){ b.inMain=false; if(flying(b)) F.push(b); }
+    const seen=new Set(); let best=[];
+    for(const s0 of F){ if(seen.has(s0)) continue; const grp=[s0]; seen.add(s0);
+      for(let k=0;k<grp.length;k++) for(const o of F) if(!seen.has(o) && grp[k].pos.distanceToSquared(o.pos)<900){ seen.add(o); grp.push(o); }
+      if(grp.length>best.length) best=grp; }
+    for(const b of best) b.inMain=true; }
+  const out=b=>P.comeGo && !b.inMain;
   let hx=0, hz=0; for(const b of birds){ if(out(b)) continue; hx+=b.vel.x; hz+=b.vel.z; }
   const hn=Math.hypot(hx,hz)||1; hx/=hn; hz/=hn;
   const along=b=>b.pos.x*hx + b.pos.z*hz - (out(b) ? 1e7 : 0);
@@ -1006,6 +1099,12 @@ function describeFlock(){
     while(k.target!=null && r<birds.length){ k=birds[k.target]; r++; }
     b.rank=r; b.leaderIdx=b.target;
   }
+  if(P.comeGo){                                           // the lead is the front-most bird somebody is following
+    const fol=new Set(); for(const b of birds) if(b.inMain && b.target!=null) fol.add(b.target);
+    const newbie=b=>b.joinedAt!=null && windT-b.joinedAt<30;     // and not a bird that only just joined
+    let k=order.findIndex(i=>birds[i].inMain && fol.has(i) && !newbie(birds[i]));
+    if(k<0 && lastFront>=0 && birds[lastFront] && birds[lastFront].inMain) k=order.indexOf(lastFront);   // nobody followed yet: keep the lead
+    if(k>0) order.unshift(order.splice(k,1)[0]); }
   if(order[0]!==lastFront){ if(lastFront>=0) birds[order[0]].leadFlash=3.0; lastFront=order[0]; }
 }
 // Seeded randomness for repeatable runs: seedRandom(n) swaps Math.random for a small PRNG
@@ -1063,7 +1162,8 @@ function resetFlock(){
   leaveTimer = P.comeGo ? P.leaveEvery*(0.5+0.5*Math.random()) : P.leaveEvery;
   if(P.comeGo && n>=8) for(let k=0;k<P.outsiders;k++) spawnResting(birds[n-1-k], 120+150*k, 220+150*k);
   describeFlock();
-  focus=0; state=birds[0]; telemetry=state.tel;
+  focus=(focusLead && order.length) ? order[0] : 0; state=birds[focus]; telemetry=state.tel;
+  try{ cam.target.copy(state.pos); }catch(e){}            // start on the lead, not gliding over from bird 0
   // reset the surface-skim cycle to a fresh high cruise
   skimState='cruise'; skimHold=0; flockBaseAlt=P.startAlt; skimCountdown=P.skimPeriod*(0.6+Math.random()*0.8);
   buildShadows();
@@ -1507,6 +1607,22 @@ function muscleCapacity(st){
 }
 
 let flapAmpScale=1;   // 1 normally; tapers <1 as the bird eases out of a flap burst into a coast
+// SMOOTH FLAP-AND-GLIDE (v26). The controller decides frame by frame whether a bird wants to flap; left to
+// itself that cut beats off mid-stroke and snapped the wing to its glide angle. Here a burst starts at the
+// top of a downstroke and grows into the beat, lasts at least two beats (one when skimming), and when the bird wants to glide
+// the beat shrinks over about a third of a beat while it settles onto the glide angle -- then the wing glides.
+function smoothBurst(st, dt){
+  if(!(st.mode==null || st.mode==='fly' || st.mode==='leave')){ st._burst=false; return; }
+  const beat=1/Math.max(P.flapFreq,0.01), want=st.flapping!==false;
+  if(want){ if(!st._burst){ st._burst=true; st._burstT=0; st._fk=0; st.phase=0; } st._amp=Math.max(st.ampScale||0, 0.3); }
+  if(!st._burst) return;
+  st._burstT+=dt;
+  const go = want || st._burstT<(st.pos.y<4 ? 1 : 2)*beat;   // (skimming the waves: short single beats)
+  st._fk += ((go?1:0)-st._fk)*(1-Math.exp(-dt/(0.3*beat)));
+  if(!go && st._fk<0.04){ st._burst=false; return; }          // eased out: glide
+  st.flapping=true; st.ampScale=(want ? st.ampScale||st._amp : st._amp)*st._fk;
+  st._fb=(1-st._fk)*P.coastBeta*DEG;                          // the beat centres on the glide angle as it fades
+}
 /* ---------------------------------------------------- PER-BIRD PHYSICS STEP */
 // Advance ONE bird by dt: run its flap DOF (coast / prescribed / muscle), the
 // aero + muscle force model, then the 6-DOF body integrator. flockControl (below)
@@ -1514,15 +1630,21 @@ let flapAmpScale=1;   // 1 normally; tapers <1 as the bird eases out of a flap b
 function stepBird(st, dt){
   const T = st.tel;
   if(st.mode==='under' || st.mode==='swim'){ waterStep(st, dt); st.t += dt; return; }
+  if(P.smoothFlap) smoothBurst(st, dt); else st._burst=false;
   flapAmpScale = st.ampScale || 1;             // per-bird beat taper (read by flapKinematics)
-  flapBias = st.flapBias || 0;
+  flapBias = (st.flapBias || 0) + (st._burst ? st._fb||0 : 0);
 
   if(!st.flapping){
     // COAST: relax the wing to its glide angle and glide -- no flapping thrust, so the
     // bird slowly loses speed to drag (fold & feather are gated off in computeForces).
-    const bt=P.coastBeta*DEG, a=1-Math.exp(-dt/0.12);
-    const nb=st.beta+(bt-st.beta)*a;
-    st.betaDot=(nb-st.beta)/dt; st.beta=nb;
+    const bt=P.coastBeta*DEG;
+    if(P.smoothFlap && (st.mode==null || st.mode==='fly' || st.mode==='leave')){   // a wing has mass: settle like one
+      const w=2*Math.PI*1.1, acc=w*w*(bt-st.beta) - 2*0.9*w*(st.betaDot||0);
+      st.betaDot=(st.betaDot||0)+acc*dt; st.beta+=st.betaDot*dt;
+    } else {
+      const a=1-Math.exp(-dt/0.12), nb=st.beta+(bt-st.beta)*a;
+      st.betaDot=(nb-st.beta)/dt; st.beta=nb;
+    }
     const f=computeForces(st);
     stepBody(st,f,dt);
     T.power=0;
@@ -1753,19 +1875,29 @@ function leaveControl(st, dt){
 function loafControl(st, dt){
   if(!P.comeGo || st.phaseT2<P.restMin) return;
   st.joinLookT=(st.joinLookT||0)-dt; if(st.joinLookT>0) return; st.joinLookT=1;
-  for(const b of birds){ if(b===st || !flying(b)) continue;
-    const dx=b.pos.x-st.pos.x, dz=b.pos.z-st.pos.z;
-    if(dx>-40 && Math.hypot(dx, dz)<P.joinRange){ if(Math.random()<0.35){ st.joinedAt=windT; startTakeoff(st); } return; } }
+  // go as the front of the flock reaches it, so it lifts off with the flock streaming past overhead and
+  // falls in among them or at the back (not out in front, where it would steal the lead), and take off
+  // along the flock's way, not wherever the bird happened to be facing
+  let f=null; for(const b of birds){ if(b===st || !b.inMain || Math.abs(b.pos.z-st.pos.z)>60) continue; if(!f || b.pos.x>f.pos.x) f=b; }
+  if(!f) return;
+  const dx=f.pos.x-st.pos.x;
+  if(dx<0 && dx>-P.joinRange && Math.random()<0.6){ st.joinedAt=windT; startTakeoff(st);
+    st.swimHdg=Math.atan2(f.vel.z, f.vel.x)+(Math.random()-0.5)*0.4; }
 }
-function flyingSpan(){ let lo=1e9, hi=-1e9, n=0; for(const b of birds) if(flying(b)){ lo=Math.min(lo, b.pos.x); hi=Math.max(hi, b.pos.x); n++; } return [lo, hi, n]; }
+function flyingSpan(){ let lo=1e9, hi=-1e9, n=0; for(const b of birds) if(b.inMain){ lo=Math.min(lo, b.pos.x); hi=Math.max(hi, b.pos.x); n++; } return [lo, hi, n]; }
 function updateComeGo(dt){
   if(!P.comeGo || birds.length<2) return;
   const [lo, hi, nf]=flyingSpan(); if(!nf) return;
   leaveTimer-=dt;
   if(leaveTimer<=0){ leaveTimer=P.leaveEvery*(0.5+Math.random());
     if(nf>P.minFlock){
-      const c=[]; for(let i=0;i<birds.length;i++) if(flying(birds[i]) && i!==order[0] && birds[i].pos.y>3) c.push(i);
+      const c=[]; for(let i=0;i<birds.length;i++) if(birds[i].inMain && i!==order[0] && birds[i].pos.y>3) c.push(i);
       if(c.length) startLeave(birds[c[Math.floor(Math.random()*c.length)]]); } }
+  // a straggler that has fallen far behind the flock (or a lone bird well off it) gives up and goes to rest
+  let mlo=1e9; for(const b of birds) if(b.inMain) mlo=Math.min(mlo, b.pos.x);
+  for(const b of birds){ if(!flying(b) || b.inMain) continue;
+    b.offT=(b.offT||0)+dt; if(b.offT>8 && b.pos.x<mlo-P.chaseRange) { b.offT=0; startLeave(b); } }
+  for(const b of birds) if(b.inMain) b.offT=0;
   // out of sight behind the flock (resting, or gone off to sea): recycle it as a fresh bird resting ahead
   for(let i=0;i<birds.length;i++){ const st=birds[i];
     const gone = (st.mode==='swim' && st.swimPhase==='loaf') || (st.mode==='leave' && st.leaveKind==='away');
@@ -2823,7 +2955,7 @@ function buildPresetSection(host){
                  ['avoidObstacles','Avoid the jetties and hills'],['viewWide','Joiners see the whole flock (not just a cone ahead)'],
                  ['fingerOfGod','Finger of God (click near the flock to disturb it)'],
                  ['fishing','Go fishing (hungry birds hunt fish schools)'],['autoSchools','Fish schools turn up on their own'],
-                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives'],['comeGo','Birds come and go (leave to rest, join from the shore)']];
+                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives'],['comeGo','Birds come and go (leave to rest, join from the shore)'],['smoothFlap','Smooth flap-and-glide (bursts ease in and out)']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!P[k];
@@ -2920,7 +3052,8 @@ function drawChart(){
 /* ============================================================ CAMERA ======= */
 // pov = -1: normal orbit/follow. pov = i>=0: ride bird i (a "bird's-eye view"), keys 1-9 pick the
 // bird, 0 returns to orbit.
-const cam={az:-2.3, el:0.28, dist:6.5, follow:true, target:V3(0,20,0), pov:-1, povYaw:0, povPitch:0, ots:-1, otsYaw:0, otsPitch:0};
+const _camD=new THREE.Vector3();
+const cam={az:-2.7, el:0.22, dist:28, follow:true, target:V3(0,20,0), pov:-1, povYaw:0, povPitch:0, ots:-1, otsYaw:0, otsPitch:0};
 const _oF=V3(), _oR=V3(), _oE=V3(), _oL=V3(), _oD=V3(), _oRt=V3();
 const BASE_FOV=55, POV_FOV=82;
 const povTagEl=document.getElementById('povTag'), leadTintEl=document.getElementById('leadTint');
@@ -3042,7 +3175,10 @@ function updateCamera(){
   camera.up.set(0,1,0);
   // Follow off parks the camera; once the focus bird is lost in the haze (fog ends at 470 m) pick it back up
   if(!cam.follow && state && cam.target.distanceTo(state.pos)>450) setFollow(true);
-  if(cam.follow && state) cam.target.lerp(state.pos, 0.22);   // tighter follow so fast flight stays framed
+  if(cam.follow && state){                                   // tight follow so fast flight stays framed,
+    _camD.subVectors(state.pos, cam.target).multiplyScalar(0.22);   // but glide (<= 40 m/s faster than the
+    const lim=0.04*state.vel.length()+0.7; if(_camD.length()>lim) _camD.setLength(lim);   // bird) to a new lead
+    cam.target.add(_camD); }
   const t=cam.target;
   camera.position.set(
     t.x+cam.dist*Math.cos(cam.el)*Math.cos(cam.az),
@@ -3066,9 +3202,17 @@ function updateOneBird(st){
   if(m.head) m.head.rotation.z = st.headPitch||0;
   if(m.feet){ const wet = st.mode==='swim' || st.mode==='takeoff' || st.mode==='under';
     m.feet.forEach((lg,i)=>{ lg.visible=wet; if(wet) lg.rotation.z = st.mode==='takeoff' ? 1.1*Math.sin(st.t*16+i*Math.PI) : 0.35*Math.sin(st.t*3+i*Math.PI); }); }
-  const gamma=(st.fold||0)*P.maxFoldDeg*DEG;
-  m.wingRelbow.rotation.set(0, -gamma, 0);   // in-plane backsweep about the wing normal (like a real elbow)
-  m.wingLelbow.rotation.set(0, +gamma, 0);   // left mirror
+  // the elbow: in-plane backsweep (like a real elbow), eased so it doesn't snap straight at the top of the
+  // stroke; on the upstroke the hand also hangs below the raised arm (the "M"), and on the downstroke the wrist
+  // carries the hand on down past the arm, so the tips sweep well below the body
+  const k=1-Math.exp(-(_meshDt||1/60)/0.06);
+  st._fv=(st._fv==null ? st.fold||0 : st._fv + ((st.fold||0)-st._fv)*k);
+  const flapV=st.flapping!==false && !(st.tuck>0.05);
+  const hand=flapV ? 0.75*st._fv*Math.max(0, be) + 0.45*Math.max(0, -be) : 0;
+  st._hv=(st._hv==null ? hand : st._hv + (hand-st._hv)*k);
+  const gamma=st._fv*P.maxFoldDeg*DEG;
+  m.wingRelbow.rotation.set(st._hv, -gamma, 0);
+  m.wingLelbow.rotation.set(-st._hv, +gamma, 0);
   const betaDotMax=Math.max(1e-3,P.flapAmp*DEG*2*Math.PI*Math.max(P.flapFreq,0.01));
   const frv=clamp(st.betaDot/betaDotMax,-1.4,1.4);
   const feath=(st.betaDot<0? P.featherAmp*DEG*frv : 0);
@@ -3162,7 +3306,9 @@ function updateShadows(){
     }
   }
 }
+let _meshDt=1/60;
 function updateBirdMesh(dt){
+  _meshDt=dt||1/60;
   for(let i=0;i<birds.length;i++){
     updateOneBird(birds[i]);
     // hide the bird we're riding so we don't stare into the back of its own head
