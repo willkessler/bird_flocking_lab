@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v29</title>
+<title>Bird Flight Lab v30</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -119,7 +119,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v29</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v30</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <div id="ctlBody">
       <div class="sub collapsed" id="ctlSub">
         <div class="phead" title="Click to expand / collapse">Controls<span class="chev">▾</span></div>
@@ -569,11 +569,26 @@ let ridgeK=0, ridgeWant=false, ridgeHold=0, ridgeCountdown=60;
 // out to just off the lip. Climbing 30 m on their own wings had worn them out by the time they got there, and the
 // tired birds fell away from the lead and out of the lift (v29).
 const _sst=u=>{ u=clamp(u,0,1); return u*u*(3-2*u); };
-const _rKl=()=>_sst(ridgeK/0.5);                 // sideways, low
-const _rKc=()=>_sst((ridgeK-0.45)/0.45);         // up, in the lift
-function flockRidgeZ(x){ return ridgeLineZ(x) - 9*(1 - _rKc()); }
+// (v30) Leaving, the order flips: they glide out over the sea at soaring height first and only then let down to the
+// water, a long shallow glide -- going down the face first had them flying low past the bluff and climbing over every
+// spur of it.
+const _rKl=()=>ridgeWant ? _sst(ridgeK/0.5) : _sst((ridgeK-0.4)/0.5);          // sideways
+const _rKc=()=>ridgeWant ? _sst((ridgeK-0.45)/0.45) : _sst(ridgeK/0.5);        // up
+// (v30) The line they fly along the bluffs is the cliff edge smoothed over ~120 m: they coast straight across coves,
+// gullies and paths cut into the cliff rather than tracing every bend of it (the lift band is a few dozen metres
+// wide, so the straighter line stays in it).
+function ridgeLineSm(x){ let z=0; for(let d=-60; d<=60; d+=15) z+=ridgeLineZ(x+d); return z/9; }
+function flockRidgeZ(x){ return ridgeLineSm(x) - 9*(1 - _rKc()); }
 function flockLineZ(x){ const k=_rKl(); return k>0 ? coastFollow(x) + k*(flockRidgeZ(x) - coastFollow(x)) : coastFollow(x); }
-function flockLineSlope(x){ const k=_rKl(); return k>0 ? coastFollowSlope(x) + k*(0.5*(ridgeLineZ(x+1) - ridgeLineZ(x-1)) - coastFollowSlope(x)) : coastFollowSlope(x); }
+function flockLineSlope(x){ const k=_rKl(); return k>0 ? coastFollowSlope(x) + k*(0.25*(ridgeLineSm(x+2) - ridgeLineSm(x-2)) - coastFollowSlope(x)) : coastFollowSlope(x); }
+// (v30) and one smooth height: the soaring height averaged over ~200 m of cliff, so they hold it across dips and
+// rises in the bluff (a bird won't climb 10 m to cross a spur and glide down the far side), but never lower than
+// clears the face under the line by ~8 m.
+function ridgeAltSm(x){
+  let a=0; for(let d=-100; d<=100; d+=25) a+=ridgeAlt(x+d); a/=9;
+  let g=0; for(let d=-30; d<=30; d+=10){ const xx=x+d; g=Math.max(g, terrainH(xx, ridgeLineSm(xx))); }
+  return Math.max(a, g + 8);
+}
 // what the land is like at (x,z): 0 beach, 1 cliff face, 2 clifftop
 function terrainZone(x,z){
   const inland=z - COAST_Z - coastLine(x), [foot, W]=_cliff(x);
@@ -2864,6 +2879,19 @@ function flockControl(st, dt){
     if(!anyAhead){ tgt=null; st.target=null; cands.length=0; }
     cands.sort((p,q)=>p[0]-q[0]);
     let best=null, bestSide=0, bs=-Infinity;
+    // (v30) SOARING FORMATION: along the cliffs the ridge lift holds everyone up, so riding a neighbour's wake
+    // matters little; what matters is keeping close, in the band of lift, ready to go back to sea together. So once
+    // the flock has swung in to the bluffs, each bird just follows the next bird up the line, a little to one side or
+    // the other as it likes: the V strings out into a loose single-file line along the cliffs (as pelicans riding a
+    // ridge or the surf do), and opens back into a V over the sea.
+    if(ridgeK>0 && _rKl()>0.5 && anyAhead){
+      let na=Infinity;
+      for(const b of birds){ if(b===st || b.id===st.passing || !flying(b)) continue;
+        const a=rel(b)[0]; if(a>0.3 && a<na && a<P.chaseRange){ na=a; best=b; } }
+      if(best){ const off=0.6*qk('side'); bestSide=0;
+        st.spotDx=-best._hx*myFd - best._hz*off; st.spotDz=-best._hz*myFd + best._hx*off; }
+      cands.length=0;
+    }
     for(const pass of [true,false]){                         // spots ahead first; behind only if none is decent
       if(!pass && bs > 0.3) break;
     for(const [,b,isAhead] of cands.slice(0,vw?40:12)){
@@ -2886,8 +2914,7 @@ function flockControl(st, dt){
                   + (side===0 ? P.pursuit : 0) + (side!==0 && side===bSide ? P.lineUp : 0)
                   + (b===tgt && side===st.spotSide ? 0.1 : 0)                 // don't flicker between near-equal spots
                   + 0.05*side*qk('side') + 0.04*P.quirk*gauss()               // my favourite side, and a misjudgement now and then
-                  + (ridgeK>0 ? 0.5*ridgeLift(sx, b.pos.y, sz) : 0);          // along the cliffs, the rising air off the bluff counts too:
-                                                                              // the V narrows to the band of lift, into a staggered line
+                  + (ridgeK>0 ? 0.5*ridgeLift(sx, b.pos.y, sz) : 0);          // along the cliffs, the rising air off the bluff counts too
         if(score>bs){ bs=score; best=b; bestSide=side; st.spotDx=sx-b.pos.x; st.spotDz=sz-b.pos.z; }
       }
     }
@@ -3317,7 +3344,7 @@ function updateRidge(dt){
 function cruiseTarget(){
   if(ridgeK<=0) return P.startAlt;
   const lx = birds.length ? birds[order[0]].pos.x : 0;
-  return P.startAlt + _rKc()*(Math.max(P.startAlt, ridgeAlt(lx)) - P.startAlt);
+  return P.startAlt + _rKc()*(Math.max(P.startAlt, ridgeAltSm(lx)) - P.startAlt);
 }
 
 /* ---------------------------------------------------- SURFACE-SKIM CYCLE (lead's call) */
@@ -4153,7 +4180,7 @@ function updateHUD(){
     : _flkVy>0.6 ? ['CLIMBING','flap'] : _flkVy<-0.6 ? ['DESCENDING','coast'] : ['CRUISING','coast'];
   mb.textContent=act[0]; mb.className='badge '+act[1];
   const sk=document.getElementById('skimTag');
-  if(sk){ if(skimState==='cruise') sk.innerHTML = ridgeK>0 ? '<span style="color:#ffd18a">'+(ridgeWant ? (ridgeK<1 ? 'Heading up to soar the cliff edge' : 'Soaring the ridge lift along the cliffs') : 'Leaving the cliffs, back down to the sea')+'</span>. ' : '';
+  if(sk){ if(skimState==='cruise') sk.innerHTML = ridgeK>0 ? '<span style="color:#ffd18a">'+(ridgeWant ? (ridgeK<1 ? 'Heading up to soar the cliff edge' : 'Soaring the ridge lift along the cliffs in a loose single-file line') : 'Leaving the cliffs: gliding out over the sea, then down to the water')+'</span>. ' : '';
     else { const lbl={descend:'Dropping to the surface',skim:'Skimming the surface in ground effect',ascend:'Climbing back to cruise'}[skimState];
       sk.innerHTML='<span style="color:#8fe9df">'+lbl+'</span> (no passing until the dip completes). '; } }
   if(sk) sk.innerHTML = skyTag() + sk.innerHTML;
