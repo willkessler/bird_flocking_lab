@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v31</title>
+<title>Bird Flight Lab v32</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -119,7 +119,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v31</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v32</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <div id="ctlBody">
       <div class="sub collapsed" id="ctlSub">
         <div class="phead" title="Click to expand / collapse">Controls<span class="chev">▾</span></div>
@@ -290,6 +290,11 @@ const P = {
   rhythmOver:2,                // easy cruise: how far out of place (m of gap, roughly) before a follower breaks rhythm to catch up
   rhythmSkip:-0.3,             // easy cruise: a follower already a little ahead (or fast) sits a burst out -- drafting, it needs fewer
   rhythmAmp:0.55,              // easy cruise: a follower's beat strength when on station (it beats harder to close up, softer to drop back)
+  learning:1,                  // v32: each bird learns from what its own flying costs it: which side of the V, how far back, whether to lead
+  learnRate:1,                 // v32: how quickly they learn (1 = settles in over a few minutes of cruising)
+  learnLead:1,                 // v32: learn whether the point is harder on me than following, and lead (or hand over) accordingly
+  learnSide:0,                 // v32: learn a favourite side of the V from its cost (off: it mostly learns where on the arm it was, and lopsides the V)
+  learnSpace:0,                // v32: learn a following distance by trying a little closer / further (off: the default is already the cheapest, and the trials cost the birds behind)
   easyCruise:1,                // v28: at cruise height, flap up to a little over pace, then glide (sinking a little) until a little under it
   comeGo:1,
   leaveEvery:45,               // s: about how often a bird leaves the flock
@@ -2818,6 +2823,50 @@ function reachCost(dx, dz, b, st){
     if(a>0.5 && a<sA-0.5 && c>cLo && c<cHi && ++n>=4) break; }
   return base + P.reachCost*n/4;
 }
+// ---- LEARNING (v32). Each bird keeps a few slow running averages of what its flying has cost it (its smoothed
+// flap power), and leans its choices toward what has been cheap. Nothing is shared: each bird learns only from
+// its own experience, and keeps it when it leaves the flock and comes back.
+//  - SIDE: the cost of riding off the left wingtip of the bird ahead vs off the right. Once it has tried both,
+//    the cheaper one adds a little to how good a spot on that side looks.
+//  - SPACING: it keeps trying a little closer, then a little further back (about 14 s each, the order
+//    alternating so slow changes cancel out), compares its power over the two, and moves its usual following
+//    distance a step toward the cheaper. A small, steady experiment, like a bird feeling for the sweet spot.
+//  - LEADING: how hard the point has been on it, against how hard following has been lately (each as power over
+//    its own sustainable power). Out front a bird breaks clean air, but it flies its own steady pace; at the back
+//    of a long arm a bird rides the wake but chases every surge that comes down the line, and can work harder
+//    than the leader. A bird that has found the point easier than where it has been flying goes round a slow
+//    leader sooner; one that has found the point harder waits longer, and when it does lead it eases off
+//    sooner, while it still has something left, so another bird takes over before it is spent.
+function newLearner(){ return {fdK:1, ph:1, phS:0, probe:0.08, eT:0, eS:0, eN:0, res:[null,null], pairs:0,
+  sC:[0,0], sT:[0,0], lc:0, lT:0, fc:0, fT:0, led:false, turns:0}; }
+function lrnSide(L, side){
+  if(L.sT[0]<15 || L.sT[1]<15) return 0;                       // not tried both sides yet
+  const k=side<0?0:1; return 0.15*clamp((L.sC[1-k] - L.sC[k])/8, -1, 1);
+}
+// how much harder the point has been on me than following (0 = no harder, 1 = much harder)
+function lrnQuit(L){ return (L.lT<10 || L.fT<10) ? 0 : clamp((L.lc - L.fc)/0.4, 0, 1); }
+// >1: the point has been harder on me than following, so I'm slower to go round; <1: it's been easier
+function lrnWilling(L){ return (L.lT<10 || L.fT<10) ? 1 : clamp(1 + 2.5*(L.lc - L.fc), 0.6, 2); }
+function learnStep(st, L, dt, calm, leading, tgt){
+  const r=P.learnRate, pSus=Math.max(1, P.sustainPower*(st.vigor||1)), p=st.pS||0;
+  if(leading && calm && !L.led) L.turns++;
+  L.led = leading && calm;
+  if(!calm || st.mode!=='fly' && st.mode!=null) return;
+  if(leading){ if(L.lT===0) L.lc=p/pSus; L.lT+=dt; L.lc += (p/pSus - L.lc)*Math.min(1, dt*r/30); return; }
+  if(!tgt) return;
+  if(L.fT===0) L.fc=p/pSus; L.fT+=dt; L.fc += (p/pSus - L.fc)*Math.min(1, dt*r/30);
+  if(st.spotSide){ const k=st.spotSide<0?0:1; if(L.sT[k]===0) L.sC[k]=p; L.sT[k]+=dt; L.sC[k] += (p - L.sC[k])*Math.min(1, dt*r/60); }
+  L.phS += (L.ph - L.phS)*Math.min(1, dt/2);                  // (ease into the new distance, don't jump)
+  L.eT+=dt; if(L.eT>5){ L.eS+=p*dt; L.eN+=dt; }               // (skip the first few s, while it moves to the new distance)
+  if(L.eT>=14){
+    L.res[L.ph>0?1:0]=L.eS/Math.max(L.eN,1e-3); L.eT=L.eS=L.eN=0;
+    if(L.res[0]!=null && L.res[1]!=null){
+      const d=L.res[1]-L.res[0];                                // further back minus closer (W): >0 = closer was cheaper
+      L.fdK=clamp(L.fdK*Math.exp(-0.04*r*clamp(d/6, -1, 1)), 0.7, 1.5); L.res=[null,null]; L.pairs++;
+    } else L.ph=-L.ph;
+  }
+}
+
 function flockControl(st, dt){
   const T=st.tel, w0=windAt(st.pos);
   const asp=V3().subVectors(st.vel,w0).length();
@@ -2836,12 +2885,19 @@ function flockControl(st, dt){
   // wingtip of the bird ahead, leans a little to one side, and likes a height a touch above or below
   // the flock's. P.quirk scales all of it (0 = identical birds).
   const qk=k=> P.quirk*(st.qr ? st.qr[k] : 0);
-  const myFd  = P.followDist*clamp(1 + 0.18*qk('fd'), 0.7, 1.45);
+  let myFd  = P.followDist*clamp(1 + 0.18*qk('fd'), 0.7, 1.45);
   const myLat = WK.bprime*clamp(1 + 0.12*qk('lat'), 0.8, 1.25);
   const latTo = b=> myLat*0.5*((st._sz||1) + (b._sz||1));   // (half my vortex span plus half of the bird ahead's)
+  // LEARNING (v32, see learnStep): at cruise, my spacing is the one experience has taught me, give or take the
+  // small step I'm trying out just now
+  const L = P.learning ? (st.lrn || (st.lrn = newLearner())) : null;
+  const calm = skimState==='cruise' && !(ridgeK>0) && st.passing==null && !st.climbing;
+  if(L && calm && P.learnSpace) myFd *= L.fdK*(1 + L.probe*L.phS);
 
   // ---- 1. PACE
   st.vPref = P.paceSpeed*(1+(st.drive||0))*(1 - P.fatigueSlow*st.fatigue);
+  // (v32) a leader that has learned the point wears it down eases off sooner, while it still has something left
+  if(L && calm && L.led && P.learnLead) st.vPref *= 1 - 0.1*lrnQuit(L)*clamp((st.fatigue - 0.25)/0.3, 0, 1);
 
   // ---- 2. DRAFT: (re)choose a few times a second WHERE to fly: one of the open spots behind a bird
   // ahead -- off its left wingtip, off its right wingtip, or straight behind it. Each spot is judged by
@@ -2914,7 +2970,8 @@ function flockControl(st, dt){
                   + (side===0 ? P.pursuit : 0) + (side!==0 && side===bSide ? P.lineUp : 0)
                   + (b===tgt && side===st.spotSide ? 0.1 : 0)                 // don't flicker between near-equal spots
                   + 0.05*side*qk('side') + 0.04*P.quirk*gauss()               // my favourite side, and a misjudgement now and then
-                  + (ridgeK>0 ? 0.5*ridgeLift(sx, b.pos.y, sz) : 0);          // along the cliffs, the rising air off the bluff counts too
+                  + (ridgeK>0 ? 0.5*ridgeLift(sx, b.pos.y, sz) : 0)           // along the cliffs, the rising air off the bluff counts too
+                  + (L && side && calm && P.learnSide ? lrnSide(L, side) : 0);              // (v32) the side that has been cheaper for me
         if(score>bs){ bs=score; best=b; bestSide=side; st.spotDx=sx-b.pos.x; st.spotDz=sz-b.pos.z; }
       }
     }
@@ -2929,8 +2986,9 @@ function flockControl(st, dt){
   }
   if(P.leadRotate && tgt && rel(tgt)[0]>0 && skimState==='cruise' && st.passing==null){
     const slowBy = st.vPref - (tgt.gsS!=null?tgt.gsS:gs);
-    st.passT = slowBy > P.passMargin ? st.passT + dt : Math.max(0, st.passT - 2*dt);
-    if(st.passT > 3){                       // it's been too slow for me for a while: go around it
+    const wil = L && P.learnLead ? lrnWilling(L) : 1;      // (v32) >1: leading has cost me dearly, so I wait longer before going round
+    st.passT = slowBy > P.passMargin*wil ? st.passT + dt : Math.max(0, st.passT - 2*dt);
+    if(st.passT > 3*wil){                       // it's been too slow for me for a while: go around it
       st.passing=tgt.id; st.passingT=0; st.passT=0;
       st.target=null; tgt=null; st.lookT=0;  // next tick I'll pick someone further up to follow, if anyone
     }
@@ -2965,6 +3023,7 @@ function flockControl(st, dt){
       const [a,c]=rel(b); if(a<2 || a>P.chaseRange) continue;
       const d=Math.hypot(a,c); if(d<chaseD){ chaseD=d; chase=b; chaseA=a; chaseC=c; } }
   }
+  if(L) learnStep(st, L, dt, calm, lead && !chase, tgt);
 
   // ---- heading: a bird with nobody ahead follows the coast; a follower lines up with the bird it
   // follows (blended with the coast it can also see). Banked, coordinated turns.
@@ -3497,6 +3556,7 @@ const SCHEMA=[
    {k:'sizeVar',label:'Size differences',min:0,max:2,step:0.05,unit:'',hint:'how much the birds differ in size: males run ~3% longer and ~10% heavier than females, plus each bird its own (1 = like real brown pelicans, ~±6% in wingspan, ~±18% in weight). Bigger birds carry more weight per square metre of wing and shed stronger wakes. 0 = all identical'},
    {k:'juvFrac',label:'Young birds',min:0,max:0.6,step:0.05,unit:'',hint:'share of the flock that are first-year birds: brown all over, a little smaller and lighter than adults'},
    {k:'quirk',label:'Individual quirks',min:0,max:1.5,step:0.05,unit:'',hint:'how much birds differ in their choices: each has its own preferred spacing, how far out on the wingtip it sits, a favourite side and height, and it sometimes picks a slightly worse spot. 0 = identical birds and a mechanically perfect V'},
+   {k:'learnRate',label:'Learning speed',min:0.25,max:4,step:0.25,unit:'×',hint:'with "Birds learn from experience" on: how fast each bird moves its habits (which side, how far back, whether to take the lead) toward what has cost it least. Higher learns sooner but chases noise more'},
    {k:'pursuit',label:'Follow the bird ahead',min:0,max:0.6,step:0.05,unit:'m/s',hint:'how much a bird prefers the spot straight behind the bird ahead over a wingtip spot, in m/s of upwash. Small next to the wake, so V\'s and echelons win up high; skimming low with loose spacing (the water cancels the wake) it lines birds up into strings'},
    {k:'wakeSeek',label:'Wake seeking',min:0,max:2,step:0.05,unit:'×',hint:'how readily a bird slides toward the wing that feels more lift. 0 = it stays wherever it is'},
    {k:'draftStrength',label:'Draft upwash strength',min:0,max:4,step:0.1,unit:'×',hint:'lift bonus a bird gets in the wake ahead'},
@@ -3690,7 +3750,7 @@ function buildPresetSection(host){
                  ['avoidObstacles','Avoid the jetties and hills'],['viewWide','Joiners see the whole flock (not just a cone ahead)'],
                  ['fingerOfGod','Finger of God (click near the flock to disturb it)'],
                  ['fishing','Go fishing (hungry birds hunt fish schools)'],['autoSchools','Fish schools turn up on their own'],
-                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives'],['comeGo','Birds come and go (leave to rest, join from the shore)'],['smoothFlap','Smooth flap-and-glide (bursts ease in and out)'],['easyCruise','Easy cruising (glide and sink a little, then flap back up)'],['camFlock','Camera watches the middle of the flock (not its lead)']];
+                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives'],['comeGo','Birds come and go (leave to rest, join from the shore)'],['smoothFlap','Smooth flap-and-glide (bursts ease in and out)'],['easyCruise','Easy cruising (glide and sink a little, then flap back up)'],['learning','Birds learn from experience (what each costs them)'],['learnLead','· learn when to lead (point vs following)'],['learnSide','· learn a favourite side of the V'],['learnSpace','· learn a following distance (tries closer / further)'],['camFlock','Camera watches the middle of the flock (not its lead)']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!P[k];
@@ -3734,6 +3794,8 @@ const STATS=[
   ['gap','Following gap','m'],['duty','Flap duty','%'],
   ['upwash','Wake upwash','m/s'],['bird','Focus bird',''],
   ['fatigue','Fatigue','%'],['vpref','Preferred pace','m/s'],
+  ['lspace','Learned spacing','m'],['lside','Learned side',''],
+  ['llead','Leading vs following',''],['flockpow','Flock avg power','W'],
 ];
 function buildHUD(){
   statGrid.innerHTML='';
@@ -3752,6 +3814,7 @@ function buildHUD(){
 function setStat(id,v){ const e=document.getElementById('st_'+id); if(e){ const u=e.querySelector('.u'); e.textContent=v; if(u) e.appendChild(u);} }
 // light smoothing for jittery status readouts (forces oscillate every wingbeat)
 const SMV={};
+let _fpN=0;
 function ema(k,v,a){ a=a||0.1; SMV[k]=(SMV[k]==null)?v:SMV[k]+(v-SMV[k])*a; return SMV[k]; }
 
 /* ---------- charts ---------- */
@@ -4170,6 +4233,14 @@ function updateHUD(){
   const role = (state.passing!=null)?'PASS':(state.leaderIdx==null)?(order[0]===focus?'LEAD':'SOLO'):('→#'+state.leaderIdx);
   setStat('fatigue', fmt(100*(state.fatigue||0)));
   setStat('vpref', fmt(state.vPref||P.paceSpeed));
+  // (v32) what this bird has learned, and the flock's average flap power over the last minute or so (watch it
+  // with learning on vs off)
+  { const L=P.learning ? state.lrn : null;
+    setStat('lspace', L ? fmt(P.followDist*L.fdK) : '–');
+    setStat('lside', !L ? '–' : (L.sT[0]<15 || L.sT[1]<15) ? 'trying both' : Math.abs(L.sC[0]-L.sC[1])<3 ? 'either' : (L.sC[0]<L.sC[1] ? 'left' : 'right')+' −'+Math.round(Math.abs(L.sC[0]-L.sC[1]))+' W');
+    setStat('llead', !L || L.lT<10 || L.fT<10 ? (L ? 'not led yet' : '–') : fmt(L.lc/Math.max(L.fc,0.05))+'× as hard');
+    let pw=0, nf=0; for(const b of birds) if(flying(b)){ pw+=b.pS||0; nf++; }
+    _fpN++; setStat('flockpow', nf ? fmt(ema('flockpow', pw/nf, Math.max(0.0003, 1/_fpN))) : '–'); }   // (a plain mean until ~1 min of frames, then a running one)
   setStat('upwash', (telemetry.upwash>=0?'+':'')+fmt(telemetry.upwash||0));
   setStat('bird', '#'+focus+' '+role);
   // the badges say what the FLOCK as a whole is mostly doing (v29), not just the one bird in the HUD
