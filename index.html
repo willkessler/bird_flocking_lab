@@ -611,14 +611,17 @@ function obstacleH(x,z){
   return h;
 }
 const _tc=new THREE.Color(), _tc2=new THREE.Color();
-const _veg=(x,z)=>Math.sin(0.21*x+0.13*z)+0.7*Math.sin(0.47*x-0.31*z+1.3)+0.5*Math.sin(1.1*x+0.7*z+2.1);   // patchy cover
+// colour patterns along the coast use whole harmonics of the tile too (12, 27, 63 and 1, 3 x _tk ~ the old 0.21, 0.47,
+// 1.1 and 0.013, 0.051 /m): they didn't repeat every tile, so each time the coast re-centred on the camera the strata on the
+// cliff face and the cover on top jumped to the colours from 360 m away, as if the ground had suddenly shifted
+const _veg=(x,z)=>Math.sin(12*_tk*x+0.13*z)+0.7*Math.sin(27*_tk*x-0.31*z+1.3)+0.5*Math.sin(63*_tk*x+0.7*z+2.1);   // patchy cover
 function terrainColor(x,z,h,rnd){
   const zone=terrainZone(x,z), inland=z-COAST_Z-coastLine(x), j=(rnd()-0.5)*0.05;
   if(zone===0){                                           // dark wet sand by the water, paler dry sand up the beach
     _tc.setHex(0x7d7362).lerp(_tc2.setHex(0xab9a7a), clamp((inland-2)/7, 0, 1));
     if(inland>3 && _veg(x,z)>1.5) _tc.lerp(_tc2.setHex(0x9a8d74), 0.4);              // drifts of darker sand
   } else if(zone===1){                                    // sandstone: tan strata with pale bands, darker low down
-    const v=h*0.8 + 2.0*Math.sin(x*0.013) + 0.8*Math.sin(x*0.051);                   // strata dip gently along the coast
+    const v=h*0.8 + 2.0*Math.sin(_tk*x) + 0.8*Math.sin(3*_tk*x);                     // strata dip gently along the coast
     _tc.setHex(0xd6a768).lerp(_tc2.setHex(0xb98652), 0.5+0.5*Math.sin(v));
     if(Math.sin(v*0.29+1.0)>0.9) _tc.lerp(_tc2.setHex(0xeedcb6), 0.8);              // the pale beds
     _tc.lerp(_tc2.setHex(0xc4955c), clamp((h-30)/12, 0, 0.6));                       // more orange up top
