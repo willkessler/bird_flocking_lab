@@ -5145,6 +5145,8 @@ window.__sim={P,
   renderFrame(dt){ updateBirdMesh(dt||1/60); updateFishFx(dt||1/60); updatePocketFx(); updateCamera(); updateWorld(); renderer.render(scene,camera); }, get focus(){return focus;}, set focus(i){setFocus(i);},
   get skimState(){return skimState;}, get flockBaseAlt(){return flockBaseAlt;},
   forceSkim(){ skimCountdown=0; },   // trigger a dip now (for testing)
+  get ridgeK(){return ridgeK;}, get ridgeWant(){return ridgeWant;}, forceRidge(){ ridgeCountdown=0; },   // a cliff visit now (for recording)
+  pods, whales, surfers, beachgoers, terrainGroup, sky,
   tick(dt){ stepFrame(dt); }, derived, integrate, stepFlock, stepBird, computeWakes, flockControl, upwashAt, WK,
   resetState, resetFlock, seedRandom, disturb, fingerAt, fogStatus, camera, get pockets(){return pockets;}, computeForces, cam, buildBird,
   addSchool, get schools(){return schools;}, fishLog, fishStatus, fishingLab, dropSchoolAt,

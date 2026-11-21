@@ -8,7 +8,7 @@
 
 <p align="center"><i>Nothing to install. It opens straight into a flying flock. Drag to orbit, press 1–9 to ride a bird, or H to watch from the beach.</i></p>
 
-[![The lab in action: a V of simulated pelicans cruises along the cliffs and beach; seen from the beach, it passes low over the sea; up close, one bird's long wings flex, its fingered primaries bend against the beat and its body bobs; a surfer looks up as the V passes overhead; then the flock finds a school, and one pelican rolls in and plunge-dives in slow motion, splashing in and bobbing back up. Click to open the live lab.](media/hero-v35.webp)](https://willkessler.github.io/bird_flocking_lab/)
+[![The lab in action, from 7 am to dusk, with captions: a V of simulated pelicans, each riding the updraft off the wingtip ahead; the flock skimming the waves in ground effect; one bird's wings flexing up close; the flock seen from the beach and by a surfer looking up; dolphins off the coast; soaring the cliff updraft strung out single file; and a slow-motion plunge dive. Click to open the live lab.](media/hero-v35.webp)](https://willkessler.github.io/bird_flocking_lab/)
 
 A browser-based physics lab for studying how **pelican flocks** fly: how individual birds generate thrust from flapping, how they save energy by drafting off one another, and how formations like the V form, hold together, and reorganize.
 
