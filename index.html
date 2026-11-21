@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v34</title>
+<title>Bird Flight Lab v35</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -119,7 +119,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v34</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v35</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <div id="ctlBody">
       <div class="sub collapsed" id="ctlSub">
         <div class="phead" title="Click to expand / collapse">Controls<span class="chev">▾</span></div>
@@ -154,7 +154,7 @@
     <button class="btn" id="btnReset">↺ Restart flight</button>
     <button class="btn" id="btnResetAll">⟲ Reset controls</button>
     <label class="btn" style="display:flex;align-items:center;gap:6px" title="Keep the camera on the lead bird"><input type="checkbox" id="chkFollow" checked style="margin:0;accent-color:var(--accent)"> 🎥 Follow</label>
-    <span style="color:var(--dim);font-size:11px">drag to orbit · scroll to zoom · <b style="color:var(--ink)">1–9</b> ride a bird · <b style="color:var(--ink)">⇧1–9</b> over-shoulder · <b style="color:var(--ink)">0</b> orbit the flock · <b style="color:var(--ink)">[ ]</b> other birds · <b style="color:var(--ink)">M</b> sound · <b style="color:var(--ink)">F</b> full screen</span>
+    <span style="color:var(--dim);font-size:11px">drag to orbit · scroll to zoom · <b style="color:var(--ink)">1–9</b> ride a bird · <b style="color:var(--ink)">⇧1–9</b> over-shoulder · <b style="color:var(--ink)">H</b> a person's view · <b style="color:var(--ink)">0</b> orbit the flock · <b style="color:var(--ink)">[ ]</b> other birds · <b style="color:var(--ink)">M</b> sound · <b style="color:var(--ink)">F</b> full screen</span>
   </div>
 
   <div id="corner">
@@ -224,6 +224,9 @@ const P = {
   innerFrac:0.55,          // fraction of half-span that is the inner (arm) segment
   innerAoA:6, outerAoA:3,  // geometric angle of attack of inner vs outer (hand) wing
   tipSpread:0.15,          // wingtip primary-feather splay (winglet at low values, airbrake high)
+  bodyHeave:0.6,           // v35: the body bobs against the wings' swing (their mass), so the whole bird's centre stays on the physics path (drawn only)
+  headStab:0.35,           // v35: the head holds steady in space; the S of the neck takes up the body's bob and rocking (drawn only)
+  muscleFlex:1,            // v35: breast and shoulders change shape as the pectoralis and supracoracoideus pull (drawn only)
   primaryFlex:1,           // v34: how far the springy primaries bend against the wingbeat (drawn only; 0 = rigid)
   // stabilizers
   tailArea:0.070, tailIncidence:-3, angDamp:1.0, stab:0.9, trimPitch:2,
@@ -1383,6 +1386,20 @@ function _sweep(path, rad, nT, nA, col){
   if(col) g.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
   g.setIndex(idx); g.computeVertexNormals(); return g;
 }
+// (v35) two morph targets for a swept body part (relative deltas): f(t, c, s) gives, for the ring point at
+// fraction t along the part and angle (c = cos: +1 on top, s = sin: sideways), how far it moves out along its own
+// radius for each target ([k0, k1], as fractions of the radius) and how far it rises ([u0, u1], metres).
+function _sweepMorphs(g, path, nT, nA, f){
+  const A=g.attributes.position.array, d0=new Float32Array(A.length), d1=new Float32Array(A.length);
+  for(let i=0;i<=nT;i++){ const t=i/nT, p=path(t);
+    for(let j=0;j<nA;j++){ const a=2*Math.PI*j/nA, c=Math.cos(a), sn=Math.sin(a), v=(i*nA+j)*3;
+      const rx=A[v]-p[0], ry=A[v+1]-p[1], rz=A[v+2], [k0,k1,u0,u1]=f(t,c,sn);
+      d0[v]=rx*k0; d0[v+1]=ry*k0+(u0||0); d0[v+2]=rz*k0;
+      d1[v]=rx*k1; d1[v+1]=ry*k1+(u1||0); d1[v+2]=rz*k1; } }
+  g.morphAttributes.position=[new THREE.Float32BufferAttribute(d0,3), new THREE.Float32BufferAttribute(d1,3)];
+  g.morphTargetsRelative=true;
+}
+const _bump=(t,a,b)=>t<=a||t>=b ? 0 : Math.pow(Math.sin(Math.PI*(t-a)/(b-a)),2);
 const BIRD_PART_DRAWS=56;   // 14 three.js objects x 4 draws each for a uuid (measured on v25)
 const WING_DRAWS=192;       // v33's two wings: 2 x 24 three.js objects x 4 draws
 // Build ONE bird's mesh (returns a refs object). `lead` tints the lead bird.
@@ -1419,12 +1436,22 @@ function makeBirdMesh(lead){
          const dep=a*(0.10+0.90*tp), wid=a*(0.28+0.72*Math.pow(1-r,1.1));
          return [rB*dep, wB*wid*(0.85+0.15*t), -0.1*rB*dep]; }, 36, 16,
     (t,c)=>shade(c, 0xa59a8a));
-  const torso=new THREE.Mesh(bodyG, skin); root.add(torso);
-  skin.vertexColors=true;
+  // (v35) the flight muscles: target 0 = the pectoralis pulling the wing down (the breast swells along the keel and
+  // the front of the shoulders bunches where it reaches the humerus); target 1 = the wings raised (the shoulders hunch
+  // up over the humeral heads as the supracoracoideus pulls through its tendon, and the breast draws in a little)
+  _sweepMorphs(bodyG, bodyPath, 36, 16, (t,c,sn)=>[
+    0.13*_bump(t,0.58,0.99)*clamp(0.35-c,0,1.35)/1.35 + 0.10*_bump(t,0.64,0.88)*clamp(c+0.2,0,1)*Math.abs(sn),
+    0.16*_bump(t,0.58,0.88)*Math.pow(clamp(c,0,1),1.5) - 0.05*_bump(t,0.64,0.99)*clamp(-c,0,1)]);
+  const torso=new THREE.Mesh(bodyG, skin); root.add(torso); torso.updateMorphTargets();
+  skin.vertexColors=true; skin.morphTargets=true;
   // a low, broad fairing over the back that carries the wing roots, so the wings grow out of the body
   const shY=0.8*rB, shZ=0.55*wB;                          // (the wing roots sit on the body, not beside it)
-  const fair=new THREE.Mesh(_sweep(t=>[Lb*(-0.28+0.6*t), shY-0.045*Lb],
-    t=>{ const s=Math.pow(Math.sin(Math.PI*t),0.6); return [0.05*Lb*s, 0.85*wB*s, 0]; }, 14, 14, (t,c)=>shade(c, 0xd8d0c2)), skin);
+  const fairPath=t=>[Lb*(-0.28+0.6*t), shY-0.045*Lb];
+  const fairG=_sweep(fairPath,
+    t=>{ const s=Math.pow(Math.sin(Math.PI*t),0.6); return [0.05*Lb*s, 0.85*wB*s, 0]; }, 14, 14, (t,c)=>shade(c, 0xd8d0c2));
+  _sweepMorphs(fairG, fairPath, 14, 14, (t,c,sn)=>{ const b=Math.sin(Math.PI*t);   // (v35) the wing roots bunch, and lift with the wings
+    return [0.10*b*Math.abs(sn), 0.06*b, 0, 0.05*Lb*b*(1-0.4*Math.abs(sn))]; });
+  const fair=new THREE.Mesh(fairG, skin); fair.updateMorphTargets();
   root.add(fair);
   const headMat=new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.8, vertexColors:true});
   const head = new THREE.Group();
@@ -1450,6 +1477,14 @@ function makeBirdMesh(lead){
   const neck=new THREE.Mesh(_sweep(nhPath, nhRad, 40, 14,
     (t,c)=>bodyCol.copy(_cA.setHex(0xfbf8f0)).lerp(_cB.setHex(0xeedb9a), clamp(c*1.3-0.6,0,1)*clamp((t-0.72)/0.1,0,1)*0.7)), headMat);
   head.add(neck);
+  // (v35) the head is a "bone" of its own: the eyes, bill and pouch ride on it, and the neck tube bends between the
+  // body (at its base) and the head (from where it becomes the skull) with smoothly blended weights
+  const hbG=new THREE.Group(); head.add(hbG);
+  const neckBase=Float32Array.from(neck.geometry.attributes.position.array), neckW=new Float32Array(neckBase.length/3);
+  { const nT=40, nA=14, sm=x=>{ x=clamp(x,0,1); return x*x*(3-2*x); };
+    for(let i=0;i<=nT;i++) for(let j=0;j<nA;j++) neckW[i*nA+j]=sm((i/nT-0.06)/(SPLIT-0.03-0.06));
+    neckW[(nT+1)*nA]=0; neckW[(nT+1)*nA+1]=1; }
+  neck.frustumCulled=false;
   // eyes: a pale iris with a dark pupil, set in a patch of bare pinkish skin -- the pelican's eye, not a black bead
   const eyeMat=new THREE.MeshStandardMaterial({color:0xe6dcae, roughness:0.45});
   const pupMat=new THREE.MeshStandardMaterial({color:0x14110e, roughness:0.35});
@@ -1458,7 +1493,7 @@ function makeBirdMesh(lead){
     for(const sg of [1,-1]){
       const on=(f,rad,mat,flat)=>{ const e=new THREE.Mesh(new THREE.SphereGeometry(rad,12,8), mat);
         e.position.set(p[0]+nx*ry*Math.cos(a)*f, p[1]+ny*ry*Math.cos(a)*f, sg*rz*Math.sin(a)*f); e.scale.set(1,1,flat);
-        e.userData.noShadow=true; head.add(e); };
+        e.userData.noShadow=true; hbG.add(e); };
       on(0.90, hr*0.27, ringMat, 0.32);                   // bare skin round the eye
       on(0.93, hr*0.19, eyeMat, 0.45);                    // iris
       on(1.00, hr*0.085, pupMat, 0.5); } }               // pupil
@@ -1469,12 +1504,14 @@ function makeBirdMesh(lead){
   const billPath=t=>{ const d=beakLen*t, hook=Math.max(0,t-0.9)*Math.max(0,t-0.9)*beakLen*6; return [b0[0]+d*ca+hook*sa*0.5, b0[1]+d*sa-hook]; };
   const bw=pelican ? hr*0.42 : hr*0.38;
   const beak=new THREE.Mesh(_sweep(billPath, t=>{ const k=t<0.96?1:(1-t)/0.04; return pelican ? [hr*0.2*(1-0.45*t)*k+0.002, bw*(1-0.3*t)*k+0.002, 0] : [hr*0.35*(1-t)+0.002, hr*0.35*(1-t)+0.002, 0]; }, 16, 8), beakMat);
-  head.add(beak);
+  hbG.add(beak);
+  let pouchG=null;
   if(pelican){                                            // gular pouch: a soft, darker sack slung from the lower jaw
     const pm=new THREE.MeshStandardMaterial({color:new THREE.Color(P.beakHex==null?0x6b5b47:P.beakHex).multiplyScalar(0.62), roughness:0.8});
     const pouch=new THREE.Mesh(_sweep(t=>{ const p=billPath(0.03+0.8*t); return [p[0]-hr*0.05, p[1]-hr*0.22]; },
       t=>{ const s=Math.pow(Math.sin(Math.PI*t),0.7)*(1-0.55*t); return [hr*0.62*s+0.002, bw*0.85*s+0.002, -hr*0.5*s]; }, 16, 10), pm);
-    head.add(pouch);
+    pouchG=new THREE.Group(); pouchG.position.set(b0[0], b0[1], 0); pouch.position.set(-b0[0], -b0[1], 0);   // (v35) hinged at the bill's base
+    pouchG.add(pouch); hbG.add(pouchG);
   }
   // pivot the head at the shoulders, so it can tip down (draining the pouch) and back (swallowing)
   head.position.set(sX, sY, 0); for(const c of head.children){ c.position.x-=sX; c.position.y-=sY; }
@@ -1562,6 +1599,7 @@ function makeBirdMesh(lead){
     ln.frustumCulled=false; flockRoot.add(ln); return ln; };
   const trailR=mkTrail(lead?0xffd18a:0xffb454), trailL=mkTrail(lead?0x8fe9df:0x4bd6c9);
   return {root, skin, headMat, trailR, trailL, wingMats:[wingMat, wingMat2], head, feet,
+          torso, fair, neck, neckBase, neckW, hbG, pouchG, hb, sX, sY, Lb,
           wingR:R.shoulder, wingRin:R.inner, wingRelbowJ:R.elbowJ, wingRfore:R.fore, wingRelbow:R.elbow, wingRout:R.outer, wingRtips:R.feathers,
           wingL:Lw.shoulder, wingLin:Lw.inner, wingLelbowJ:Lw.elbowJ, wingLfore:Lw.fore, wingLelbow:Lw.elbow, wingLout:Lw.outer, wingLtips:Lw.feathers, tail};
 }
@@ -2411,6 +2449,7 @@ function stepBird(st, dt){
   if(P.smoothFlap) smoothBurst(st, dt); else st._burst=false;
   flapAmpScale = st.ampScale || 1;             // per-bird beat taper (read by flapKinematics)
   flapBias = (st.flapBias || 0) + (st._burst ? st._fb||0 : 0);
+  st._tau=0;                                   // (v35) the flight muscles' torque this step, for the drawn breast (read-only)
 
   if(!st.flapping){
     // COAST: relax the wing to its glide angle and glide -- no flapping thrust, so the
@@ -2457,6 +2496,7 @@ function stepBird(st, dt){
     st.phase += phaseDot*dt;
     stepBody(st,f,dt);
     T.power=Math.abs(tauAct*st.betaDot);        // real muscle mechanical power
+    st._tau=tauAct; st._capD=cap.dep; st._capE=cap.ele;   // (v35) drawn only: how hard each muscle is pulling
     const have=(tauReq<0?cap.dep:cap.ele);
     T.effort = have>1e-6 ? clamp(Math.abs(tauReq)/have,0,2) : 2;   // >1 = saturated
   }
@@ -3835,6 +3875,9 @@ const SCHEMA=[
    {k:'innerAoA',label:'Inner-wing angle of attack',min:-4,max:16,step:0.5,unit:'°'},
    {k:'outerAoA',label:'Outer-wing angle of attack',min:-6,max:14,step:0.5,unit:'°',hint:'the hand-wing; usually washed out below the arm'},
    {k:'tipSpread',label:'Wingtip feather spread',min:0,max:1,step:0.05,unit:'',hint:'primaries: low = winglet, high = airbrake. Auto-spreads while coasting'},
+   {k:'bodyHeave',label:'Body bobs against the wings',min:0,max:2.5,step:0.05,unit:'',hint:'the wings are 16% of a pelican\'s mass: as they swing up the body drops, and as they come down it rises, so the whole bird\'s centre of mass stays on its flight path. Drawn only. 0 = the body rides rigidly'},
+   {k:'headStab',label:'Head held steady',min:0,max:1,step:0.05,unit:'',hint:'like a real bird, the head holds still in space while the body bobs and rocks under it; the folded S of the neck flexes to take it up, and the pouch swings a little behind. Drawn only. 0 = head fixed to the body'},
+   {k:'muscleFlex',label:'Breast & shoulder muscles',min:0,max:2.5,step:0.05,unit:'',hint:'the breast bulges as the pectoralis pulls the wing down (as hard as the physics\' muscle is pulling), and the shoulders hunch up as the wings rise. Drawn only. 0 = rigid body'},
    {k:'primaryFlex',label:'Primary feather flex',min:0,max:2.5,step:0.05,unit:'',hint:'the long wingtip feathers bend against the beat: they carry on curling down as the wing stops at the bottom, and bend up as the downstroke starts. Drawn only. 0 = rigid'},
  ]},
  {title:'Flapping, fold & thrust', open:true, items:[
@@ -4139,7 +4182,9 @@ function updateWorld(){
   _stageFrame();
   updateBeachgoers(performance.now()*0.001);
   updateSeaLife(performance.now()*0.001); updateHangGliders(performance.now()*0.001);
-  terrainGroup.position.x = Math.round(p.x/TERR_PERIOD)*TERR_PERIOD;   // seamless endless coast
+  // seamless endless coast; in the human view it holds still (the camera stands on someone who lives on the coast,
+  // so re-centring on the camera would carry them -- and the camera -- off down the coast)
+  if(!cam.human) terrainGroup.position.x = Math.round(p.x/TERR_PERIOD)*TERR_PERIOD;
 }
 // The orbit camera aims at the followed bird, but the side panels cover part of the screen, so shift the
 // picture to put that bird in the middle of the clear area between them (a panel only counts while it
@@ -4179,9 +4224,53 @@ function flockCentre(){
   _fc.addScaledVector(_fcV, dt);
   return _fc;
 }
+// (v35) HUMAN VIEW: H stands the camera at the eyes of the person nearest the flock -- a surfer out on the water or
+// someone on the beach -- looking at the flock as it goes by, to see how it looks from where people actually watch
+// pelicans. H again picks whoever is nearest now; 0 goes back to the orbit camera.
+const _huB=new THREE.Box3(), _huP=V3(), _huC=V3(), _huE=V3(), _huL=V3();
+function _humans(){
+  const L=[];
+  for(const b of beachgoers) if(b.p.g.visible) L.push({g:b.p.g, kind:'someone on the beach'});
+  for(const s of surfers) if(s.g.visible) L.push({g:s.g, kind:'a surfer'});
+  return L;
+}
+function _flockMid(out){
+  out.set(0,0,0); let n=0;
+  for(const b of birds){ if(b.mode==='under') continue; out.add(b.pos); n++; }
+  return n ? out.multiplyScalar(1/n) : out.copy(state ? state.pos : V3(0,20,0));
+}
+function pickHuman(){
+  _flockMid(_huC);
+  terrainGroup.position.x = Math.round(_huC.x/TERR_PERIOD)*TERR_PERIOD;   // the coast round the flock, then whoever is nearest on it
+  terrainGroup.updateMatrixWorld(true);
+  let best=null, bd=Infinity;
+  for(const h of _humans()){ h.g.getWorldPosition(_huP); const d=Math.hypot(_huP.x-_huC.x, _huP.z-_huC.z); if(d<bd){ bd=d; best=h; } }
+  if(!best) return false;
+  cam.human=best; cam.humanLook=null; cam.pov=-1; cam.ots=-1; focusLead=true; return true;
+}
+function humanCamera(){
+  const h=cam.human;
+  if(!h.g.visible && !pickHuman()){ cam.human=null; return false; }   // they went home: the next nearest, or back to orbit
+  const g=cam.human.g; g.updateMatrixWorld(true); _huB.setFromObject(g);
+  _flockMid(_huC);
+  // eyes just below the top of their head, a little toward the flock so we look past their own face
+  _huE.set((_huB.min.x+_huB.max.x)/2, _huB.max.y-0.1, (_huB.min.z+_huB.max.z)/2);
+  if(cam.human.kind==='a surfer') _huE.y=Math.max(_huE.y, waveHJS(_huE.x,_huE.z)+0.75);   // (lying on the board: eyes at sitting height)
+  _huP.subVectors(_huC, _huE).setY(0); if(_huP.lengthSq()>1e-6) _huE.addScaledVector(_huP.normalize(), 0.35);
+  camera.position.copy(_huE); camera.up.set(0,1,0);
+  if(!cam.humanLook) cam.humanLook=_huC.clone(); else cam.humanLook.lerp(_huC, 0.08);   // a person's gaze follows smoothly
+  camera.lookAt(cam.humanLook);
+  if(camera.fov!==HUMAN_FOV){ camera.fov=HUMAN_FOV; camera.updateProjectionMatrix(); }
+  const dist=_huL.subVectors(_huC,_huE).length();
+  povTagEl.style.display='block';
+  povTagEl.innerHTML='🧍 Human view — from '+cam.human.kind+', the flock '+dist.toFixed(0)+' m away · H for whoever is nearest now · 0 to exit';
+  return true;
+}
+const HUMAN_FOV=50;
 function updateCamera(){
   if(cam.override){ frameBetweenPanels(false); cam.override(camera); return; }        // test hook: a fixed camera for screenshots
-  if(cam.pov>=0 || cam.ots>=0) frameBetweenPanels(false);   // riding / over the shoulder: the bird sits dead ahead
+  if(cam.pov>=0 || cam.ots>=0 || cam.human) frameBetweenPanels(false);   // riding / over the shoulder / a person's eyes: dead ahead
+  if(cam.human){ leadTintEl.style.display='none'; if(humanCamera()) return; }
   // ---- bird's-eye view: ride on the chosen bird's head; drag to look around at the rest of the flock ----
   if(cam.pov>=0 && birds[cam.pov]){
     const st=birds[cam.pov];
@@ -4309,6 +4398,91 @@ function _primaryBend(st, th, dt){
   }
   return clamp((s.phi-th)*(P.primaryFlex??1)*1.6, -0.9, 0.9);
 }
+// (v35) THE BODY REACTS TO THE WINGBEAT (drawn only; the physics and seeded runs are untouched):
+//  1. Heave: the wings are ~16% of the bird's mass. As they swing up the body drops, and as they sweep down it rises,
+//     so the centre of mass of the whole bird stays on the physics path (the physics flies it as one rigid body).
+//  2. The head holds steady in space, as a real bird's does (gaze stabilisation): it follows a smoothed version of
+//     where the body carries it -- a spring that passes the flight path's slow changes but not the wingbeat's bob --
+//     and holds its pitch while the body rocks. The folded S of the neck bends to make up the difference, and the
+//     pouch swings on its hinge behind the head's accelerations.
+//  3. The flight muscles show: the breast swells as the pectoralis pulls the wing down (by how hard the physics'
+//     muscle is actually pulling), and the shoulders hunch up as the wings rise.
+//  4. The tail flexes with the air the bobbing body meets and spreads when the bird flies slowly.
+const _blU=V3(), _blH=V3(), _blT=V3(), _blD=V3(), _blF=V3(), _blQi=new THREE.Quaternion();
+function _bodyLife(st, m, be, dt){
+  if(!m.neck) return;
+  const ok = dt>0 && dt<0.25, sz=st._sz||1, q=m.root.quaternion;
+  const wet = st.mode==='swim' || st.mode==='under' || (st.mode==='takeoff' && st.pos.y<0.3);
+  const air = wet || st.mode==='dive' ? 0 : 1;
+  st._blk = (st._blk==null || !ok) ? air : st._blk + (air-st._blk)*(1-Math.exp(-dt/0.3));   // eases in and out with the mode
+  const k=st._blk;
+  // 1. heave against the wings' swing (their mass centre ~42% out along the half-span, nearer when folded)
+  const mw=clamp(P.wingMassFrac,0,0.5), rc=0.42*P.span*sz*(1-0.35*(st._fv||0)), sb=Math.sin(be);
+  st._sbM = (st._sbM==null || !ok) ? sb : st._sbM + (sb-st._sbM)*(1-Math.exp(-dt/1.2));      // about the wings' mean height
+  const hv = -(P.bodyHeave??1)*k*(mw/(1-mw))*rc*(sb-st._sbM);
+  m.root.position.addScaledVector(_blU.set(0,1,0).applyQuaternion(q), hv);
+  const hvDot = ok && st._hvP!=null ? (hv-st._hvP)/dt : 0; st._hvP=hv;
+  // 2. the head: a spring toward where the body carries it, fed the slow (smoothed) part of that point's velocity
+  _blH.set(m.hb[0], m.hb[1], 0).multiplyScalar(sz).applyQuaternion(q).add(m.root.position);
+  _blF.set(1,0,0).applyQuaternion(q); const pitch=Math.asin(clamp(_blF.y,-1,1));
+  let s=st._hs;
+  if(!s || !ok || s.p.distanceToSquared(_blH)>1){
+    s=st._hs={p:_blH.clone(), v:V3(), vb:V3(), prev:_blH.clone(), ay:0, pp:pitch, pv:0, pr:0, pPrev:pitch, th:0, thv:0};
+  } else {
+    const mv=_blT.subVectors(_blH, s.prev).divideScalar(dt);
+    s.vb.lerp(mv, 1-Math.exp(-dt/0.35));
+    const pr=(pitch-s.pPrev)/dt; s.pr += (pr-s.pr)*(1-Math.exp(-dt/0.35));
+    const w=2*Math.PI*0.9, z=0.8, n=Math.max(2, Math.ceil(dt/0.004)), h=dt/n, vy0=s.v.y;
+    for(let i=0;i<n;i++){
+      _blT.subVectors(_blH, s.p).multiplyScalar(w*w).addScaledVector(_blD.subVectors(s.vb, s.v), 2*z*w);
+      s.v.addScaledVector(_blT, h); s.p.addScaledVector(s.v, h);
+      s.pv += (w*w*(pitch-s.pp) + 2*z*w*(s.pr-s.pv))*h; s.pp += s.pv*h;
+    }
+    s.ay = (s.v.y-vy0)/dt;
+  }
+  s.prev.copy(_blH); s.pPrev=pitch;
+  const Lb=m.Lb, d=_blD.subVectors(s.p, _blH).applyQuaternion(_blQi.copy(q).invert()).divideScalar(sz);
+  const cx=clamp(d.x,-0.15*Lb,0.15*Lb), cy=clamp(d.y,-0.15*Lb,0.15*Lb), cz=clamp(d.z,-0.06*Lb,0.06*Lb);
+  if(cx!==d.x || cy!==d.y || cz!==d.z){ d.set(cx,cy,cz); s.p.copy(d).multiplyScalar(sz).applyQuaternion(q).add(_blH); d.set(cx,cy,cz); }
+  if(Math.abs(s.pp-pitch)>0.25){ s.pp=pitch+Math.sign(s.pp-pitch)*0.25; }
+  // only the quick part shows: the slow part of the offset (the bird speeding up, slowing, turning) drains away
+  if(!s.dm){ s.dm=d.clone(); s.am=s.pp-pitch; }
+  else if(ok){ const f=1-Math.exp(-dt/0.6); s.dm.lerp(d, f); s.am += (s.pp-pitch-s.am)*f; }
+  d.sub(s.dm); d.x=clamp(d.x,-0.04*Lb,0.04*Lb); d.y=clamp(d.y,-0.06*Lb,0.06*Lb); d.z=clamp(d.z,-0.02*Lb,0.02*Lb);   // a few cm of give, no more
+  const g=clamp(P.headStab??1,0,1)*k;
+  const a=g*clamp(s.pp-pitch-s.am,-0.12,0.12), hp=m.head.rotation.z||0, ch=Math.cos(hp), shp=Math.sin(hp);
+  const dx=g*(d.x*ch + d.y*shp), dy=g*(-d.x*shp + d.y*ch), dz=g*d.z;          // into the head's frame (it may be tipped)
+  const ca=Math.cos(a), sa=Math.sin(a), hx=m.hb[0], hy=m.hb[1];
+  m.hbG.position.set(-m.sX + dx + hx - (ca*hx - sa*hy), -m.sY + dy + hy - (sa*hx + ca*hy), dz);
+  m.hbG.rotation.z=a;
+  const L=st._nk || (st._nk=[1e9,0,0,0]);
+  if(Math.abs(L[0]-dx)+Math.abs(L[1]-dy)+Math.abs(L[2]-dz)+0.3*Math.abs(L[3]-a) > 2e-4){   // bend the neck between body and head
+    L[0]=dx; L[1]=dy; L[2]=dz; L[3]=a;
+    const B=m.neckBase, W=m.neckW, A=m.neck.geometry.attributes.position, X=A.array;
+    for(let i=0,v=0;i<W.length;i++,v+=3){ const w=W[i], x=B[v], y=B[v+1], zz=B[v+2];
+      if(w===0){ X[v]=x; X[v+1]=y; X[v+2]=zz; continue; }
+      const px=ca*(x-hx)-sa*(y-hy)+hx+dx, py=sa*(x-hx)+ca*(y-hy)+hy+dy;
+      X[v]=x+w*(px-x); X[v+1]=y+w*(py-y); X[v+2]=zz+w*dz; }
+    A.needsUpdate=true; m.neck.geometry.computeVertexNormals();
+  }
+  // the pouch: a soft sack on a hinge, swinging behind the head's up-and-down accelerations
+  if(m.pouchG){ const wp=2*Math.PI*2.2, tgt=clamp(-0.012*s.ay, -0.2, 0.2);
+    if(ok){ s.thv += (wp*wp*(tgt-s.th) - 2*0.3*wp*s.thv)*dt; s.th=clamp(s.th+s.thv*dt,-0.3,0.3); }
+    m.pouchG.rotation.z=s.th; }
+  // 3. the flight muscles
+  let pec=0, ele=0;
+  if(!wet && st.flapping!==false && st._capD>0){ pec=clamp(-2*(st._tau||0)/st._capD,0,1); ele=clamp(2*(st._tau||0)/Math.max(st._capE,1e-6),0,1); }   // (a cruising beat pulls ~1/4 of the muscle's full force)
+  const rai=clamp(Math.max(0,be)/(45*DEG),0,1)*(wet?0:1);
+  const fm=ok ? 1-Math.exp(-dt/0.06) : 1;
+  st._pec=(st._pec??pec) + (pec-(st._pec??pec))*fm; st._rai=(st._rai??rai) + (0.65*rai+0.35*ele-(st._rai??rai))*fm;
+  const mf=P.muscleFlex??1;
+  if(m.torso.morphTargetInfluences){ m.torso.morphTargetInfluences[0]=mf*st._pec; m.torso.morphTargetInfluences[1]=mf*st._rai; }
+  if(m.fair.morphTargetInfluences){ m.fair.morphTargetInfluences[0]=mf*st._pec; m.fair.morphTargetInfluences[1]=mf*st._rai; }
+  // 4. the tail: flexes down as the body rises into the air (and up as it drops), spreads when flying slowly
+  const spd=st.vel ? st.vel.length() : 10;
+  st._tailZ=_wSm(st,'_sTz', clamp(1.3*hvDot/Math.max(spd,5), -0.15, 0.15), dt, 0, true);
+  m.tail.scale.z = 1 + k*(0.3*clamp((0.85*(P.paceSpeed||12)-spd)/(0.4*(P.paceSpeed||12)),0,1) + 0.08*mf*st._pec);
+}
 function updateOneBird(st){
   const m=st.mesh; if(!m) return;
   m.root.position.copy(st.pos);
@@ -4323,6 +4497,7 @@ function updateOneBird(st){
   const be=_wSm(st,'_sBe', st.beta+P.dihedral*DEG+(st.wRaise||0), dtM), sig=_wSm(st,'_sSg', (st.tuck||0)*P.tuckSweep*DEG, dtM);
   m.wingR.rotation.set(-be, -sig, 0); m.wingL.rotation.set(be, sig, 0);   // flap/raise, then sweep back (tuck)
   if(m.head) m.head.rotation.z = st.headPitch||0;
+  _bodyLife(st, m, be, dtM);
   if(m.feet){ const wet = st.mode==='swim' || st.mode==='takeoff' || st.mode==='under';
     m.feet.forEach((lg,i)=>{ lg.visible=wet; if(wet) lg.rotation.z = st.mode==='takeoff' ? 1.1*Math.sin(st.t*16+i*Math.PI) : 0.35*Math.sin(st.t*3+i*Math.PI); }); }
   // the elbow: in-plane backsweep (like a real elbow), eased so it doesn't snap straight at the top of the
@@ -4369,7 +4544,7 @@ function updateOneBird(st){
   // the tail twists about the body's long axis to help the roll along: into the roll while the body is still
   // catching up, and a touch into a held bank (eased, so it never snaps either)
   const tw=_wSm(st,'_sTw', clamp(1.1*lag + 0.3*(st._rb ? st._rb.x : 0), -0.5, 0.5), dtM, 0, true);
-  m.tail.rotation.set(tw, 0, P.tailIncidence*DEG);
+  m.tail.rotation.set(tw, 0, P.tailIncidence*DEG + (st._tailZ||0));
   // wingtip wake trails (each traces a shed vortex core)
   if(P.vTrail){
     const L2=P.span*(1-P.innerFrac);
@@ -4938,14 +5113,16 @@ addEventListener('keydown',e=>{
   if(e.key==='r'||e.key==='R') resetState();
   if(e.key==='f'||e.key==='F') toggleFullscreen();
   if(e.key==='m'||e.key==='M') sfxToggle();
+  if(e.key==='h'||e.key==='H') pickHuman();               // (v35) see the flock through the eyes of the nearest person
   if(e.key===']'||e.key==='.') pickFocus(focus+1);       // cycle which bird the HUD/camera follows
   if(e.key==='['||e.key===',') pickFocus(focus-1);
   // bird's-eye view: 1-9 ride that bird (look through its eyes), 0 returns to the orbit camera
   // camera views: 1-9 ride a bird (through its eyes); Shift+1-9 over-the-shoulder chase; 0 = orbit
   const dm = e.code && e.code.match(/^Digit([0-9])$/);
   if(dm){ const d=+dm[1];
-    if(d===0){ cam.pov=-1; cam.ots=-1; focusLead=true; }   // back to the orbit camera on the lead
+    if(d===0){ cam.pov=-1; cam.ots=-1; cam.human=null; focusLead=true; }   // back to the orbit camera on the lead
     else if(d-1 < birds.length){ const i=d-1;
+      cam.human=null;
       if(e.shiftKey){ cam.ots=i; cam.pov=-1; cam.otsYaw=0; cam.otsPitch=0; pickFocus(i); }
       else { cam.pov=i; cam.ots=-1; cam.povYaw=0; cam.povPitch=0; pickFocus(i); }
     }
