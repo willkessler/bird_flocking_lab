@@ -4226,7 +4226,8 @@ function flockCentre(){
 }
 // (v35) HUMAN VIEW: H stands the camera at the eyes of the person nearest the flock -- a surfer out on the water or
 // someone on the beach -- looking at the flock as it goes by, to see how it looks from where people actually watch
-// pelicans. H again picks whoever is nearest now; 0 goes back to the orbit camera.
+// pelicans. H toggles: in a person's view it goes back to the orbit camera, and the press after that takes you to
+// whoever is nearest then (skipping the person you just watched if they're still nearest). 0 also goes back.
 const _huB=new THREE.Box3(), _huP=V3(), _huC=V3(), _huE=V3(), _huL=V3();
 function _humans(){
   const L=[];
@@ -4244,8 +4245,11 @@ function pickHuman(){
   terrainGroup.position.x = Math.round(_huC.x/TERR_PERIOD)*TERR_PERIOD;   // the coast round the flock, then whoever is nearest on it
   terrainGroup.updateMatrixWorld(true);
   let best=null, bd=Infinity;
-  for(const h of _humans()){ h.g.getWorldPosition(_huP); const d=Math.hypot(_huP.x-_huC.x, _huP.z-_huC.z); if(d<bd){ bd=d; best=h; } }
+  // the nearest person other than the one last watched, so each H visit is someone new (unless they're the only one)
+  for(const h of _humans()){ h.g.getWorldPosition(_huP); const d=Math.hypot(_huP.x-_huC.x, _huP.z-_huC.z)+(h.g===cam.lastHuman ? 1e6 : 0);
+    if(d<bd){ bd=d; best=h; } }
   if(!best) return false;
+  cam.lastHuman=best.g;
   cam.human=best; cam.humanLook=null; cam.pov=-1; cam.ots=-1; focusLead=true; return true;
 }
 function humanCamera(){
@@ -4263,7 +4267,7 @@ function humanCamera(){
   if(camera.fov!==HUMAN_FOV){ camera.fov=HUMAN_FOV; camera.updateProjectionMatrix(); }
   const dist=_huL.subVectors(_huC,_huE).length();
   povTagEl.style.display='block';
-  povTagEl.innerHTML='🧍 Human view — from '+cam.human.kind+', the flock '+dist.toFixed(0)+' m away · H for whoever is nearest now · 0 to exit';
+  povTagEl.innerHTML='🧍 Human view — from '+cam.human.kind+', the flock '+dist.toFixed(0)+' m away · H or 0 to exit, H again for the next person';
   return true;
 }
 const HUMAN_FOV=50;
@@ -5113,7 +5117,7 @@ addEventListener('keydown',e=>{
   if(e.key==='r'||e.key==='R') resetState();
   if(e.key==='f'||e.key==='F') toggleFullscreen();
   if(e.key==='m'||e.key==='M') sfxToggle();
-  if(e.key==='h'||e.key==='H') pickHuman();               // (v35) see the flock through the eyes of the nearest person
+  if(e.key==='h'||e.key==='H'){ if(cam.human){ cam.human=null; focusLead=true; } else pickHuman(); }   // (v35) a person's view of the flock; H again back to orbit
   if(e.key===']'||e.key==='.') pickFocus(focus+1);       // cycle which bird the HUD/camera follows
   if(e.key==='['||e.key===',') pickFocus(focus-1);
   // bird's-eye view: 1-9 ride that bird (look through its eyes), 0 returns to the orbit camera
