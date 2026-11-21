@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Bird Flight Lab v33</title>
+<title>Bird Flight Lab v34</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -119,7 +119,7 @@
   <div id="scene"></div>
 
   <div class="panel" id="controls">
-    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v33</small> <small>blade-element</small><span class="chev">▾</span></h1>
+    <h1 id="ctlHead" title="Click to collapse / expand"><span class="dot"></span> Bird Flight Lab <small title="version of the lab you're running" style="color:#7fe3d0;font-weight:600">v34</small> <small>blade-element</small><span class="chev">▾</span></h1>
     <div id="ctlBody">
       <div class="sub collapsed" id="ctlSub">
         <div class="phead" title="Click to expand / collapse">Controls<span class="chev">▾</span></div>
@@ -221,9 +221,10 @@ const P = {
   headScale:1.3, beakScale:2.4, neckFold:0.85, beakHex:0xE8A63D,
   // wing geometry (per wing)
   span:1.10, rootChord:0.34, taper:0.5, sweep:6, dihedral:6,
-  innerFrac:0.42,          // fraction of half-span that is the inner (arm) segment
-  innerAoA:8, outerAoA:3,  // geometric angle of attack of inner vs outer (hand) wing
+  innerFrac:0.55,          // fraction of half-span that is the inner (arm) segment
+  innerAoA:6, outerAoA:3,  // geometric angle of attack of inner vs outer (hand) wing
   tipSpread:0.15,          // wingtip primary-feather splay (winglet at low values, airbrake high)
+  primaryFlex:1,           // v34: how far the springy primaries bend against the wingbeat (drawn only; 0 = rigid)
   // stabilizers
   tailArea:0.070, tailIncidence:-3, angDamp:1.0, stab:0.9, trimPitch:2,
   // aero
@@ -232,6 +233,9 @@ const P = {
   // flapping / kinematics
   mode:'muscle', flapFreq:2.6, flapAmp:35, upDownAsym:0.18, featherAmp:8,
   foldAmount:0.85, maxFoldDeg:95,   // wrist/elbow flex on the upstroke (0 = rigid wing)
+  birdPlan:1,                 // v34: a pelican-shaped planform (broad even arm, slim hand) of the same area; 0 = straight taper (v33)
+  anatomy:1, humerusFrac:0.47, elbowLink:0.45,   // v34: the arm is a humerus and a forearm (radius+ulna) with the elbow and wrist linked as in a bird: as the wrist sweeps the hand back, the elbow flexes the forearm forward by elbowLink x as much, so the arm sheds span too (anatomy 0 = one rigid arm, v33)
+  wingFlex:1, glideFlex:14,   // v34: the upstroke fold follows each beat's own height, and the elbow rests this many deg bent gliding / on gentle beats (wingFlex 0 = v33)
   // flap/coast strategy (intermittent flight)
   flapStrategy:'intermittent', paceSpeed:11, followDist:2.5, draftBand:3, coastBeta:10,
   // flock: wingtip wakes and drafting. No slots are assigned -- each bird picks whom to draft and
@@ -296,6 +300,7 @@ const P = {
   learnSide:0,                 // v32: learn a favourite side of the V from its cost (off: it mostly learns where on the arm it was, and lopsides the V)
   socialLearn:1,               // v33: each bird also learns by watching others (how hard the leader and the birds near it are working), merged with its own experience
   socialProbe:0,               // v33: with spacing learning and watching both on, how much a bird still tries closer / further itself (0 = only copies, 1 = full trials)
+  claimSpots:1,                // v34: a spot behind a bird that another bird is already flying to (and is nearer) counts as taken, so arms grow one bird wide instead of piling up
   learnSpace:0,                // v32: learn a following distance by trying a little closer / further (off: the default is already the cheapest, and the trials cost the birds behind)
   easyCruise:1,                // v28: at cruise height, flap up to a little over pace, then glide (sinking a little) until a little under it
   comeGo:1,
@@ -354,7 +359,7 @@ const PRESETS = {
     neckLen:0.24, launchSpeed:17, startAlt:30, paceSpeed:19, wingMassFrac:0.14, headMassFrac:0.12,
     headScale:1.1, beakScale:1.5, neckFold:0.25, beakHex:0xE9C27A },
   Pelican:{ mass:3.5, span:1.10, rootChord:0.34, taper:0.5, sweep:6, dihedral:6,
-    innerFrac:0.42, innerAoA:8, outerAoA:3, foldAmount:0.85, maxFoldDeg:95,
+    innerFrac:0.55, innerAoA:6, outerAoA:3, foldAmount:0.85, maxFoldDeg:95,
     flapFreq:2.6, flapAmp:35, featherAmp:8, tailArea:0.070, tailLen:0.42,
     neckLen:0.35, launchSpeed:13, startAlt:25, paceSpeed:15, wingMassFrac:0.16, headMassFrac:0.12,
     headScale:1.3, beakScale:2.4, neckFold:0.85, beakHex:0xE8A63D }
@@ -1271,23 +1276,42 @@ let describeT = 0;           // throttle for describeFlock()
 let skimState='cruise', skimHold=0, skimCountdown=30, flockBaseAlt=20, skimFreezeX=0, skimFreezeHdg=0;
 const flockRoot = new THREE.Group(); scene.add(flockRoot);
 
+// (v34) the wing's chord at global span fraction gf (0 root .. 1 tip). With P.birdPlan on it has a pelican's
+// shape instead of a straight taper: the arm (secondaries) keeps a broad, nearly even chord out to the wrist,
+// slightly narrower where it meets the body, and the hand narrows to a slim tip. Same area as the taper it
+// replaces, so the wing loading is unchanged. The physics strips and the drawn wing both use it.
+let _wcK='', _wcN=1;
+function _wcShape(gf){
+  const f0=clamp(P.innerFrac,0.1,0.9);
+  if(gf<=f0){ const a=gf/f0; return 1 + 0.05*a - 0.12*Math.pow(1-a,3); }
+  const u=(gf-f0)/(1-f0); return 1.05*(1 - 0.62*Math.pow(u,1.5));
+}
+function wingChord(gf){
+  if(!P.birdPlan) return P.rootChord*(1-(1-P.taper)*gf);
+  const k=P.innerFrac+'|'+P.rootChord+'|'+P.taper;
+  if(k!==_wcK){ let m=0; for(let i=0;i<400;i++) m+=_wcShape((i+0.5)/400); _wcN=(P.rootChord*(1+P.taper)/2)/(m/400); _wcK=k; }
+  return _wcN*_wcShape(gf);
+}
 function tri(a,b,c){ return [a.x,a.y,a.z,b.x,b.y,b.z,c.x,c.y,c.z]; }
 
 // Build one wing segment spanning global span-fractions gf0..gf1. Local +z*sign starts
 // at 0 (so an outer segment can be attached at the elbow joint). Chord & sweep follow
 // the global planform so inner + outer read as one continuous wing when extended.
-function buildWingSeg(sign, gf0, gf1){
+function buildWingSeg(sign, gf0, gf1, scallop){
   const n=5, verts=[];
   const push=(p)=>verts.push(p.x,p.y,p.z);
   for(let i=0;i<n;i++){
     const a=i/n, b=(i+1)/n;
     const gfa=lerp(gf0,gf1,a), gfb=lerp(gf0,gf1,b);
     const la=(gfa-gf0)*P.span, lb=(gfb-gf0)*P.span;   // local span position from segment root
-    const ca=P.rootChord*(1-(1-P.taper)*gfa), cb=P.rootChord*(1-(1-P.taper)*gfb);
+    const ca=wingChord(gfa), cb=wingChord(gfb);
     const swa=-Math.tan(P.sweep*DEG)*(gfa*P.span), swb=-Math.tan(P.sweep*DEG)*(gfb*P.span);
     const LEa=V3(swa+ca*0.35,0,sign*la), TEa=V3(swa-ca*0.65,0,sign*la);
     const LEb=V3(swb+cb*0.35,0,sign*lb), TEb=V3(swb-cb*0.65,0,sign*lb);
     push(LEa);push(LEb);push(TEa); push(TEa);push(LEb);push(TEb);
+    // (v34) the secondaries' tips: a row of rounded points along the trailing edge, one per feather
+    if(scallop) for(let f=0;f<scallop;f++){ const A=V3().lerpVectors(TEa,TEb,f/scallop), B=V3().lerpVectors(TEa,TEb,(f+1)/scallop);
+      const M=V3().lerpVectors(A,B,0.5); M.x -= 0.07*lerp(ca,cb,(f+0.5)/scallop); push(A); push(M); push(B); }
   }
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
@@ -1295,6 +1319,51 @@ function buildWingSeg(sign, gf0, gf1){
   return g;
 }
 
+// (v34) the planform at global span fraction gf, in the outer segment's frame: leading edge, the line the hand
+// bones run along (where the physics puts its quarter-chord), trailing edge, and chord.
+function _handPlan(gf){
+  const c=wingChord(gf), sw=-Math.tan(P.sweep*DEG)*(gf*P.span);
+  return {le:sw+0.35*c, bone:sw+0.10*c, te:sw-0.65*c, c};
+}
+// The coverts over the hand: nearly full chord at the wrist (meeting the arm), narrowing to a point well past the
+// last joint, so they hide the bases of the primaries and only the outer, free part of each shows (as on the bird).
+function buildHandCoverts(sign, Lc){
+  const n=8, verts=[], g0=P.innerFrac;
+  const edge=(u)=>{ const z=u*Lc, p=_handPlan(g0+z/P.span), tip=p.bone-0.12*p.c;
+    return [V3(p.le+(tip-p.le)*Math.pow(u,5), 0, sign*z), V3(p.te+0.1*p.c+(tip-p.te-0.1*p.c)*Math.pow(u,1.1), 0, sign*z)]; };
+  const push=(p)=>verts.push(p.x,p.y,p.z);
+  for(let i=0;i<n;i++){ const [La,Ta]=edge(i/n), [Lb,Tb]=edge((i+1)/n);
+    push(La);push(Lb);push(Ta); push(Ta);push(Lb);push(Tb); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+  g.computeVertexNormals(); return g;
+}
+// (v34) feathering that fills the elbow when the forearm flexes forward: a fan hinged at the elbow, in the forearm's
+// frame, reaching back over the humerus by up to maxA (it lies just under the humerus when the elbow is straight),
+// so no notch opens in the trailing edge -- on the bird the tertials and secondaries overlap there.
+function _elbowFan(sign, gf, maxA){
+  const c=wingChord(gf), sw=-Math.tan(P.sweep*DEG)*(gf*P.span), te=sw-0.72*c, v=[], n=6, y=-0.002;
+  const pt=(a)=>[te*Math.cos(a), y, sign*te*Math.sin(a)];   // the forearm's root trailing edge, swung back by a
+  for(let i=0;i<n;i++){ const a0=maxA*i/n, a1=maxA*(i+1)/n; v.push(sw+0.1*c,y,0, ...pt(a0), ...pt(a1)); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(v,3)); g.computeVertexNormals(); return g;
+}
+// ...and the wrist's leading edge: as the hand sweeps back, its root leading edge swings out from the forearm's, so
+// a fan in the hand's frame reaches forward-in over the forearm by up to maxA (the carpal joint and alula on the bird)
+function _wristFan(sign, gf, maxA){
+  const c=wingChord(gf), sw=-Math.tan(P.sweep*DEG)*(gf*P.span), le=sw+0.35*c, v=[], n=8, y=0.002;
+  const pt=(a)=>[le*Math.cos(a), y, -sign*le*Math.sin(a)];
+  for(let i=0;i<n;i++){ const a0=maxA*i/n, a1=maxA*(i+1)/n; v.push(sw-0.2*c,y,0, ...pt(a0), ...pt(a1)); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(v,3)); g.computeVertexNormals(); return g;
+}
+// One length of a primary, flat in the wing plane from z=0 to sign*len, its shaft on x=0 with the narrow vane in
+// front (30%) and the broad vane behind (70%), narrowing from w0 to w1; the last length ends in a rounded tip.
+function _quillGeo(sign, w0, w1, len, tip){
+  const v=[], q=(a,b,c)=>v.push(...a,...b,...c);
+  const A=[0.3*w0,0,0], B=[-0.7*w0,0,0], C=[-0.7*w1,0,sign*len], D=[0.3*w1,0,sign*len];
+  q(A,D,B); q(B,D,C);
+  if(tip){ const E=[-0.15*w1,0,sign*(len+0.6*w1)]; q(D,E,C); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));
+  g.computeVertexNormals(); return g;
+}
 // A tube swept along a curve in the bird's mid-plane (x forward, y up): path(t) -> [x,y]; rad(t) -> [half-depth,
 // half-width, shift of the section along its up-normal]; col(t, c) -> a vertex colour, c = +1 on top, -1 underneath.
 // The ends are capped, so a profile that tapers to zero closes to a point.
@@ -1315,10 +1384,11 @@ function _sweep(path, rad, nT, nA, col){
   g.setIndex(idx); g.computeVertexNormals(); return g;
 }
 const BIRD_PART_DRAWS=56;   // 14 three.js objects x 4 draws each for a uuid (measured on v25)
+const WING_DRAWS=192;       // v33's two wings: 2 x 24 three.js objects x 4 draws
 // Build ONE bird's mesh (returns a refs object). `lead` tints the lead bird.
 function makeBirdMesh(lead){
   const root = new THREE.Group();
-  const bodyLen = clamp(P.rootChord*2.2, 0.12, 0.9);
+  const bodyLen = clamp(P.rootChord*1.8, 0.12, 0.9);   // (v34: x1.8, was 2.2 -- a pelican's torso is ~0.5 m against a 2.3 m span; drawn only)
   const bodyR = clamp(bodyLen*0.28, 0.03, 0.22);
   const skin = new THREE.MeshStandardMaterial({color: lead?0x5cb6ff:0xe4dcc9, roughness:0.8});
   const dark = new THREE.MeshStandardMaterial({color:0x6b5b47, roughness:0.85});
@@ -1435,24 +1505,55 @@ function makeBirdMesh(lead){
   function mkWing(sign){
     const shoulder=new THREE.Group(); shoulder.position.set(shoulderX, shoulderY, sign*shoulderZ);
     shoulder.rotation.order='YXZ';                          // raise/flap first, then sweep back (tuck)
+    // (v34) humerus -> elbow -> forearm (radius + ulna, with the secondaries) -> wrist -> hand. With P.anatomy off
+    // the elbow never bends and the arm is drawn as before.
+    const fh=P.innerFrac*clamp(P.humerusFrac??0.47, 0.2, 0.8), LH=fh*P.span;
     const inner=new THREE.Group(); shoulder.add(inner);
-    inner.add(new THREE.Mesh(buildWingSeg(sign,0,P.innerFrac), wingMat));
-    const elbow=new THREE.Group(); elbow.position.set(0,0,sign*L1); shoulder.add(elbow);
+    inner.add(new THREE.Mesh(buildWingSeg(sign,0,fh,P.birdPlan?2:0), wingMat));
+    const elbowJ=new THREE.Group(); elbowJ.position.set(0,0,sign*LH); shoulder.add(elbowJ);
+    const fore=new THREE.Group(); elbowJ.add(fore);
+    const foreG=buildWingSeg(sign,fh,P.innerFrac,P.birdPlan?3:0); const fm=new THREE.Mesh(foreG, wingMat); fm.userData.quill=true; fore.add(fm);
+    if(P.anatomy){ const ef=new THREE.Mesh(_elbowFan(sign, fh, clamp(P.elbowLink??0.45,0,1)*P.maxFoldDeg*DEG), wingMat); ef.userData.quill=true; fore.add(ef); }   // (quill: its shadow draws no seeded numbers, as v33 had no forearm part)
+    const elbow=new THREE.Group(); elbow.position.set(0,0,sign*(L1-LH)); elbowJ.add(elbow);   // the wrist
     const outer=new THREE.Group(); elbow.add(outer);
-    outer.add(new THREE.Mesh(buildWingSeg(sign,P.innerFrac,1), wingMat2));
-    const L2=P.span*(1-P.innerFrac), tipX=-Math.tan(P.sweep*DEG)*P.span;
+    // (v34) the HAND, laid out like a real pelican's (Simons et al. 2011, J. Morph., fig. 7B): the bones (carpometacarpus
+    // and major digit) run out along the front of the hand for about a third of its span, under the coverts. Ten
+    // primaries root one after another along those bones, each at a slant: the inner ones point mostly back and
+    // make the hand's trailing edge, the outer ones point mostly out, run past the bones and make the tip, where
+    // they part into "fingers". Their tips trace the same planform the physics flies with.
+    const L2=P.span*(1-P.innerFrac), Lh=0.36*L2;
+    outer.add(new THREE.Mesh(buildHandCoverts(sign, Lh*1.75), wingMat2));
+    if(P.anatomy){ const wf=new THREE.Mesh(_wristFan(sign, P.innerFrac, Math.min(100*DEG,(1+clamp(P.elbowLink??0.45,0,1))*P.maxFoldDeg*DEG)), wingMat2); wf.userData.quill=true; outer.add(wf); }
     const feaMat=new THREE.MeshStandardMaterial({color:0x3d382c, roughness:0.9, side:THREE.DoubleSide});
-    const feathers=[];
-    for(let k=0;k<5;k++){
-      const fg=new THREE.Group(); fg.position.set(tipX,0,sign*L2);
-      const len=0.42*L2*(1-0.07*k), w=Math.max(0.01,0.06*P.rootChord*(1-0.12*k));
-      const bx=new THREE.Mesh(new THREE.BoxGeometry(w,0.004,len), feaMat);
-      bx.position.z=sign*len/2; fg.add(bx); fg.userData.k=k; outer.add(fg); feathers.push(fg);
+    const feathers=[], NP=10;
+    for(let k=0;k<NP;k++){
+      const u=k/(NP-1), s=Lh*lerp(0.04,1,u), pl=_handPlan(P.innerFrac+s/P.span);
+      const th=lerp(45,4,Math.pow(u,0.8))*DEG, w=P.rootChord*lerp(0.26,0.17,u);
+      // long enough that its tip reaches the planform's outline (trailing edge, or the wingtip), a touch past it;
+      // the free fingers run on ~8% past the tip the physics flies with (the slots between them carry little load)
+      let len=0.05*L2; const dx=-Math.sin(th), dz=Math.cos(th);
+      for(; len<1.2*L2; len+=0.005*L2){ const z=s+len*dz, x=pl.bone+len*dx;
+        if(z>=L2*(1.02+0.08*u*u) || x<=_handPlan(P.innerFrac+Math.min(z,L2)/P.span).te) break; }
+      len += 0.03*P.rootChord;
+      const fg=new THREE.Group(); fg.position.set(pl.bone, -0.002-0.0015*k, sign*s); fg.rotation.y=-sign*th;   // root on the bone, slanted
+      const sp=new THREE.Group(); fg.add(sp);                // splay / lift of this quill (set per frame)
+      // three jointed lengths, so the quill can bend in an arc (updateOneBird); the vane narrows toward the tip,
+      // and the outer quills narrow sharply (emarginated), which opens the slots between the fingers
+      const joints=[]; let par=sp; const wf=[1, 0.88, 0.78, lerp(0.55,0.32,u)];
+      for(let q=0;q<3;q++){
+        const j=new THREE.Group(); if(q>0) j.position.z=sign*len/3; par.add(j); joints.push(j);
+        const qm=new THREE.Mesh(_quillGeo(sign, w*wf[q], w*wf[q+1], len/3, q===2), feaMat); qm.userData.quill=true; j.add(qm); par=j;
+      }
+      fg.userData.k=k; fg.userData.u=u; fg.userData.sp=sp; fg.userData.j=joints; outer.add(fg); feathers.push(fg);
     }
     root.add(shoulder);
-    return {shoulder,inner,elbow,outer,feathers};
+    return {shoulder,inner,elbowJ,fore,elbow,outer,feathers};
   }
+  // (v34) the wings, like the body, are built on the browser's own random numbers, then the seeded draws the v33
+  // wings used (24 three.js objects a wing x 4) are spent, so seeded runs replay unchanged
+  Math.random=_rand0;
   const R=mkWing(+1), Lw=mkWing(-1);
+  Math.random=_seededB; for(let i=0;i<WING_DRAWS;i++) Math.random();
   flockRoot.add(root);
   // per-bird wingtip wake trails (world-space lines tracing each vortex core)
   const mkTrail=c=>{ const g=new THREE.BufferGeometry();
@@ -1461,8 +1562,8 @@ function makeBirdMesh(lead){
     ln.frustumCulled=false; flockRoot.add(ln); return ln; };
   const trailR=mkTrail(lead?0xffd18a:0xffb454), trailL=mkTrail(lead?0x8fe9df:0x4bd6c9);
   return {root, skin, headMat, trailR, trailL, wingMats:[wingMat, wingMat2], head, feet,
-          wingR:R.shoulder, wingRin:R.inner, wingRelbow:R.elbow, wingRout:R.outer, wingRtips:R.feathers,
-          wingL:Lw.shoulder, wingLin:Lw.inner, wingLelbow:Lw.elbow, wingLout:Lw.outer, wingLtips:Lw.feathers, tail};
+          wingR:R.shoulder, wingRin:R.inner, wingRelbowJ:R.elbowJ, wingRfore:R.fore, wingRelbow:R.elbow, wingRout:R.outer, wingRtips:R.feathers,
+          wingL:Lw.shoulder, wingLin:Lw.inner, wingLelbowJ:Lw.elbowJ, wingLfore:Lw.fore, wingLelbow:Lw.elbow, wingLout:Lw.outer, wingLtips:Lw.feathers, tail};
 }
 function disposeMesh(mesh){
   if(!mesh) return;
@@ -1636,6 +1737,8 @@ function updateWindField(){
 /* ============================================================ PHYSICS ===== */
 let state, derived={};
 const NS1 = 4, NS2 = 5; // blade-element strips: inner segment, outer segment (per wing)
+// (v34) with P.anatomy, the arm's strips: humerus (2) then forearm (3), as [gf0, gf1, strips]
+function _armParts(){ const fh=P.innerFrac*clamp(P.humerusFrac??0.47, 0.2, 0.8); return [[0, fh, 2], [fh, P.innerFrac, 3]]; }
 
 function recomputeDerived(){
   const m=P.mass;
@@ -1658,8 +1761,9 @@ function recomputeDerived(){
   derived.Iflap = Math.max(1e-4, (1/3)*mWing*s2*boneI);
   // wing area (sum inner + outer strips, matching the blade-element discretization)
   let A=0;
-  for(let i=0;i<NS1;i++){ const gf=P.innerFrac*(i+0.5)/NS1; const c=P.rootChord*(1-(1-P.taper)*gf); A+=c*(P.innerFrac*P.span/NS1); }
-  for(let j=0;j<NS2;j++){ const gf=P.innerFrac+(1-P.innerFrac)*(j+0.5)/NS2; const c=P.rootChord*(1-(1-P.taper)*gf); A+=c*((1-P.innerFrac)*P.span/NS2); }
+  if(P.anatomy){ for(const [g0,g1,n] of _armParts()) for(let i=0;i<n;i++){ const gf=g0+(g1-g0)*(i+0.5)/n; A+=wingChord(gf)*((g1-g0)*P.span/n); } }
+  else for(let i=0;i<NS1;i++){ const gf=P.innerFrac*(i+0.5)/NS1; const c=wingChord(gf); A+=c*(P.innerFrac*P.span/NS1); }
+  for(let j=0;j<NS2;j++){ const gf=P.innerFrac+(1-P.innerFrac)*(j+0.5)/NS2; const c=wingChord(gf); A+=c*((1-P.innerFrac)*P.span/NS2); }
   derived.wingArea = A*2;
   derived.AR = (2*P.span)*(2*P.span)/derived.wingArea;
   // body drag frontal area
@@ -1938,12 +2042,23 @@ function computeForces(st){
   // that's when the swept-back hand hangs lowest and the wing reads as an "M".
   const ampR = Math.max(P.flapAmp*DEG, 1e-3);
   const upstroke = st.betaDot > 0;
-  const armUp = clamp(st.beta/ampR, 0, 1);                      // 0 (level) .. 1 (fully raised)
+  // (v34) with wingFlex on, the fold is measured against THIS beat's height, not the biggest beat there is, so a
+  // gentle cruising beat still flexes and draws the hand in at the top of each upstroke as a full beat does.
+  const ampB = P.wingFlex ? ampR*clamp(flapAmpScale, 0.25, 1) : ampR;
+  const armUp = clamp((st.beta - (P.wingFlex ? flapBias : 0))/ampB, 0, 1);   // 0 (level) .. 1 (fully raised)
   const fold01 = (flapping && upstroke) ? armUp : 0;           // flex the raised wing; extend for the downstroke
   const foldFrac = P.foldAmount * fold01;                       // 0..foldAmount
-  const gamma = foldFrac * P.maxFoldDeg*DEG;                    // elbow flex angle (rad)
-  const gammaDot = (flapping && upstroke && armUp>0 && armUp<1) ? P.foldAmount*(st.betaDot/ampR)*P.maxFoldDeg*DEG : 0;
-  T.foldDeg = foldFrac*P.maxFoldDeg;
+  // (v34) and the elbow is never quite locked straight: gliding, and on the downstroke of a gentle beat, it rests
+  // a little bent (P.glideFlex at cruise pace), more the faster the bird goes (less span, less drag) and less the
+  // harder it beats (a full stroke straightens the wing for all its lift)
+  let gRest = 0;
+  if(P.wingFlex && P.glideFlex>0){
+    const spdF = clamp(relAir.length()/Math.max(P.paceSpeed,1), 0.5, 1.6);
+    gRest = P.glideFlex*DEG*spdF*(flapping ? 1-0.7*clamp(flapAmpScale,0,1) : 1);
+  }
+  const gamma = Math.max(gRest, foldFrac * P.maxFoldDeg*DEG);  // elbow flex angle (rad)
+  const gammaDot = (flapping && upstroke && armUp>0 && armUp<1 && foldFrac*P.maxFoldDeg*DEG>gRest) ? P.foldAmount*(st.betaDot/ampB)*P.maxFoldDeg*DEG : 0;
+  T.foldDeg = gamma/DEG;
   // TUCK (diving / on the water): the wing sweeps back at the shoulder, the hand folds onto the arm, and
   // the feathers slide over each other. It changes the real geometry the strips see, so the lift goes.
   const tuck=clamp(st.tuck||0,0,1), sig=tuck*P.tuckSweep*DEG, swept=sig>0.01;
@@ -2017,31 +2132,65 @@ function computeForces(st){
     const omegaFold=n1.clone().multiplyScalar(-sign*gammaDot);
     const elbowVel = V3().crossVectors(omega1, V3().subVectors(elbow, shoulder));
 
-    // INNER segment (rigid arm)
-    for(let i=0;i<NS1;i++){
-      const gf=P.innerFrac*(i+0.5)/NS1, r=gf*P.span;
-      const c=P.rootChord*(1-(1-P.taper)*gf);
-      const sw=-Math.tan(P.sweep*DEG)*r;
-      const dA=c*(P.innerFrac*P.span/NS1);
-      const p = swept ? V3(sw+0.10*c,0,0).applyAxisAngle(_Y, th).add(shoulder).addScaledVector(s1, r)
-                      : V3(shoulder.x+sw+0.10*c, shoulder.y, shoulder.z).addScaledVector(s1, r);
-      const rFromSh=V3().subVectors(p, shoulder);
-      const vWing=V3().crossVectors(omega1, rFromSh);
-      addStrip(sign, s1, p, rFromSh, vWing, P.innerAoA*DEG+feath, dA*tuckArea, dA, chordB);
-    }
-    // OUTER segment (hand-wing that folds on the upstroke)
-    for(let j=0;j<NS2;j++){
-      const gf=P.innerFrac+(1-P.innerFrac)*(j+0.5)/NS2, r2=(gf-P.innerFrac)*P.span;
-      const c=P.rootChord*(1-(1-P.taper)*gf);
-      const sw=-Math.tan(P.sweep*DEG)*(gf*P.span);
-      const dA=c*((1-P.innerFrac)*P.span/NS2);
-      const areaF=Math.max(1-0.45*foldNorm, 0.3);                // feather overlap reduces exposed area when folded
-      const p = swept ? V3(sw+0.10*c,0,0).applyAxisAngle(_Y, th).add(elbow).addScaledVector(s2, r2)
-                      : V3(elbow.x+sw+0.10*c, elbow.y, elbow.z).addScaledVector(s2, r2);
-      const rFromSh=V3().subVectors(p, shoulder);
-      const rFromEl=V3().subVectors(p, elbow);
-      const vWing=V3().copy(elbowVel).add(V3().crossVectors(V3().addVectors(omega1, omegaFold), rFromEl));
-      addStrip(sign, s2, p, rFromSh, vWing, P.outerAoA*DEG+feath, dA*areaF*tuckArea, dA, chord2);
+    if(!P.anatomy){
+      // INNER segment (rigid arm)
+      for(let i=0;i<NS1;i++){
+        const gf=P.innerFrac*(i+0.5)/NS1, r=gf*P.span;
+        const c=wingChord(gf);
+        const sw=-Math.tan(P.sweep*DEG)*r;
+        const dA=c*(P.innerFrac*P.span/NS1);
+        const p = swept ? V3(sw+0.10*c,0,0).applyAxisAngle(_Y, th).add(shoulder).addScaledVector(s1, r)
+                        : V3(shoulder.x+sw+0.10*c, shoulder.y, shoulder.z).addScaledVector(s1, r);
+        const rFromSh=V3().subVectors(p, shoulder);
+        const vWing=V3().crossVectors(omega1, rFromSh);
+        addStrip(sign, s1, p, rFromSh, vWing, P.innerAoA*DEG+feath, dA*tuckArea, dA, chordB);
+      }
+      // OUTER segment (hand-wing that folds on the upstroke)
+      for(let j=0;j<NS2;j++){
+        const gf=P.innerFrac+(1-P.innerFrac)*(j+0.5)/NS2, r2=(gf-P.innerFrac)*P.span;
+        const c=wingChord(gf);
+        const sw=-Math.tan(P.sweep*DEG)*(gf*P.span);
+        const dA=c*((1-P.innerFrac)*P.span/NS2);
+        const areaF=Math.max(1-0.45*foldNorm, 0.3);                // feather overlap reduces exposed area when folded
+        const p = swept ? V3(sw+0.10*c,0,0).applyAxisAngle(_Y, th).add(elbow).addScaledVector(s2, r2)
+                        : V3(elbow.x+sw+0.10*c, elbow.y, elbow.z).addScaledVector(s2, r2);
+        const rFromSh=V3().subVectors(p, shoulder);
+        const rFromEl=V3().subVectors(p, elbow);
+        const vWing=V3().copy(elbowVel).add(V3().crossVectors(V3().addVectors(omega1, omegaFold), rFromEl));
+        addStrip(sign, s2, p, rFromSh, vWing, P.outerAoA*DEG+feath, dA*areaF*tuckArea, dA, chord2);
+      }
+    } else {
+      // (v34) THREE BONES. Humerus: rigid with the flap. Forearm (radius + ulna, carrying the secondaries):
+      // flexes forward at the elbow by eps, in the wing plane. Hand (carpometacarpus + digits, carrying the
+      // primaries): swept back at the wrist so that it ends up gammaT behind the humerus's line. The two joints
+      // are linked as in a bird (the radius slides along the ulna as the elbow bends and drives the wrist), so
+      // folding the hand on the upstroke draws the wrist in and forward and the whole arm sheds span.
+      const [[,fh], [f0,f1]] = _armParts();
+      const LH=fh*P.span, LF=(f1-f0)*P.span, link=clamp(P.elbowLink??0.45, 0, 1);
+      const eps=link*gamma, epsDot=link*gammaDot;               // (the tuck sweeps at the shoulder instead)
+      const elbowJ = shoulder.clone().addScaledVector(s1, LH);
+      const sF = rot(s1, n1, sign*eps), chordF = swept ? rot(chordB, n1, sign*eps) : null;
+      const wrist = elbowJ.clone().addScaledVector(sF, LF);
+      const omegaE = n1.clone().multiplyScalar(sign*epsDot), omegaW = n1.clone().multiplyScalar(-sign*(epsDot+gammaDot));
+      const vAt=(p, withE, withW)=>{ const v=V3().crossVectors(omega1, V3().subVectors(p, shoulder));
+        if(withE) v.add(V3().crossVectors(omegaE, V3().subVectors(p, elbowJ)));
+        if(withW) v.add(V3().crossVectors(omegaW, V3().subVectors(p, wrist)));
+        return v; };
+      const xOff=(gf, c, rot_)=>{ const sw=-Math.tan(P.sweep*DEG)*(gf*P.span); const o=V3(sw+0.10*c,0,0); return swept ? o.applyAxisAngle(_Y, th) : o; };
+      // humerus
+      for(let i=0;i<2;i++){ const gf=fh*(i+0.5)/2, c=wingChord(gf), dA=c*(fh*P.span/2);
+        const p=xOff(gf,c).add(shoulder).addScaledVector(s1, gf*P.span);
+        addStrip(sign, s1, p, V3().subVectors(p, shoulder), vAt(p,false,false), P.innerAoA*DEG+feath, dA*tuckArea, dA, chordB); }
+      // forearm: the secondaries crowd together a little as the elbow bends
+      const areaE=1-0.25*clamp(eps/Math.max(link*P.maxFoldDeg*DEG,1e-3),0,1);
+      for(let i=0;i<3;i++){ const gf=f0+(f1-f0)*(i+0.5)/3, c=wingChord(gf), dA=c*((f1-f0)*P.span/3);
+        const p=xOff(gf,c).add(elbowJ).addScaledVector(sF, (gf-f0)*P.span);
+        addStrip(sign, sF, p, V3().subVectors(p, shoulder), vAt(p,true,false), P.innerAoA*DEG+feath, dA*areaE*tuckArea, dA, chordF); }
+      // hand
+      for(let j=0;j<NS2;j++){ const gf=f1+(1-f1)*(j+0.5)/NS2, c=wingChord(gf), dA=c*((1-f1)*P.span/NS2);
+        const areaF=Math.max(1-0.45*foldNorm, 0.3);
+        const p=xOff(gf,c).add(wrist).addScaledVector(s2, (gf-f1)*P.span);
+        addStrip(sign, s2, p, V3().subVectors(p, shoulder), vAt(p,true,true), P.outerAoA*DEG+feath, dA*areaF*tuckArea, dA, chord2); }
     }
   }
   derived.IflapDyn = Math.max(1e-4, Iflap);
@@ -3034,9 +3183,14 @@ function flockControl(st, dt){
         const sx=b.pos.x - b._hx*myFd - b._hz*side*latTo(b);               // spot behind b, in b's frame
         const sz=b.pos.z - b._hz*myFd + b._hx*side*latTo(b);
         let taken=false;
+        const myD2 = P.claimSpots ? (st.pos.x-sx)**2 + (st.pos.z-sz)**2 : 0;
         for(const w of birds){ if(w===st || w===b) continue;
           const ex=w.pos.x-sx, ez=w.pos.z-sz, al=ex*b._hx+ez*b._hz, la=-ex*b._hz+ez*b._hx;
-          if(Math.abs(al)<1.5 && Math.abs(la)<1.0){ taken=true; break; } }
+          if(Math.abs(al)<1.5 && Math.abs(la)<1.0){ taken=true; break; }
+          // (v34) a spot another bird is already flying to, and is nearer, is taken too: birds sit 1.5-2 m off their
+          // spots, so going only by who is in it, three or four birds would all go for the same spot at an arm's end
+          // and pile up behind one bird, filling the V in from inside
+          if(P.claimSpots && w.target===b.id && w.spotSide===side && flying(w) && ex*ex+ez*ez < myD2){ taken=true; break; } }
         if(taken) continue;
         let score = upwashAt(sx, b.pos.y, sz, b._hx, b._hz, st)
                   - reachCost(sx-st.pos.x, sz-st.pos.z, b, st)
@@ -3672,7 +3826,8 @@ const SCHEMA=[
  ]},
  {title:'Wing geometry', open:true, items:[
    {k:'span',label:'Wing length (each)',min:0.05,max:1.5,step:0.01,unit:'m'},
-   {k:'innerFrac',label:'Inner (arm) fraction',min:0.2,max:0.7,step:0.02,unit:'',hint:'humerus vs forearm/hand split — where the elbow sits'},
+   {k:'innerFrac',label:'Arm fraction',min:0.2,max:0.7,step:0.02,unit:'',hint:'how much of the half-span is arm (humerus + forearm) vs hand — where the wrist sits'},
+   {k:'humerusFrac',label:'Humerus share of the arm',min:0.25,max:0.7,step:0.01,unit:'',hint:'upper arm vs forearm (radius + ulna) — where the elbow sits'},
    {k:'rootChord',label:'Root chord',min:0.02,max:0.5,step:0.005,unit:'m'},
    {k:'taper',label:'Taper (tip/root)',min:0.1,max:1,step:0.02,unit:''},
    {k:'sweep',label:'Sweep',min:-10,max:35,step:1,unit:'°'},
@@ -3680,6 +3835,7 @@ const SCHEMA=[
    {k:'innerAoA',label:'Inner-wing angle of attack',min:-4,max:16,step:0.5,unit:'°'},
    {k:'outerAoA',label:'Outer-wing angle of attack',min:-6,max:14,step:0.5,unit:'°',hint:'the hand-wing; usually washed out below the arm'},
    {k:'tipSpread',label:'Wingtip feather spread',min:0,max:1,step:0.05,unit:'',hint:'primaries: low = winglet, high = airbrake. Auto-spreads while coasting'},
+   {k:'primaryFlex',label:'Primary feather flex',min:0,max:2.5,step:0.05,unit:'',hint:'the long wingtip feathers bend against the beat: they carry on curling down as the wing stops at the bottom, and bend up as the downstroke starts. Drawn only. 0 = rigid'},
  ]},
  {title:'Flapping, fold & thrust', open:true, items:[
    {k:'flapFreq',label:'Flap frequency',min:0,max:12,step:0.1,unit:'Hz'},
@@ -3687,6 +3843,8 @@ const SCHEMA=[
    {k:'upDownAsym',label:'Down/up asymmetry',min:-0.6,max:0.6,step:0.02,unit:''},
    {k:'foldAmount',label:'Upstroke wing fold',min:0,max:1,step:0.02,unit:'',hint:'flex the elbow on the upstroke. 0 = rigid wing (costly upstroke)'},
    {k:'maxFoldDeg',label:'Full-fold angle',min:0,max:110,step:2,unit:'°'},
+   {k:'elbowLink',label:'Elbow–wrist link',min:0,max:1,step:0.05,unit:'',hint:'as the wrist sweeps the hand back, the elbow flexes the forearm forward by this fraction as much (the radius slides along the ulna), so the arm sheds span too. 0 = rigid arm, only the hand folds'},
+   {k:'glideFlex',label:'Resting elbow bend',min:0,max:40,step:1,unit:'°',hint:'gliding, and on the downstroke of a gentle beat, the elbow rests this much bent: more when flying fast, less on a hard beat. 0 = the wing locks straight'},
    {k:'featherAmp',label:'Feather (pitch ∝ flap rate)',min:0,max:45,step:1,unit:'°',hint:'nose-down destall on downstroke — trades lift for thrust'},
  ]},
  {title:'Coasting & drafting', open:true, items:[
@@ -3765,7 +3923,7 @@ function mkCtl(it){
     val.textContent=fmt(P[it.k])+(it.unit?(' '+it.unit):'');
     recomputeDerived();
     if(it.k==='nBirds'){ resetState(); }   // add/remove birds -> rebuild the flock
-    else if(['span','rootChord','taper','sweep','neckLen','tailArea','tailLen','innerFrac'].includes(it.k)) buildBird();
+    else if(['span','rootChord','taper','sweep','neckLen','tailArea','tailLen','innerFrac','humerusFrac'].includes(it.k)) buildBird();
     if(it.reset){ /* launch params only take effect on reset */ }
     markPresetCustom();
   });
@@ -3824,7 +3982,7 @@ function buildPresetSection(host){
                  ['avoidObstacles','Avoid the jetties and hills'],['viewWide','Joiners see the whole flock (not just a cone ahead)'],
                  ['fingerOfGod','Finger of God (click near the flock to disturb it)'],
                  ['fishing','Go fishing (hungry birds hunt fish schools)'],['autoSchools','Fish schools turn up on their own'],
-                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives'],['comeGo','Birds come and go (leave to rest, join from the shore)'],['smoothFlap','Smooth flap-and-glide (bursts ease in and out)'],['easyCruise','Easy cruising (glide and sink a little, then flap back up)'],['learning','Birds learn from experience (what each costs them)'],['learnLead','· learn when to lead (point vs following)'],['learnSide','· learn a favourite side of the V'],['learnSpace','· learn a following distance (tries closer / further)'],['socialLearn','· learn from watching others too'],['camFlock','Camera watches the middle of the flock (not its lead)']];
+                 ['dropSchool','Click the water to drop a fish school'],['diveSlowmo','Slow motion while the bird you follow dives'],['comeGo','Birds come and go (leave to rest, join from the shore)'],['smoothFlap','Smooth flap-and-glide (bursts ease in and out)'],['easyCruise','Easy cruising (glide and sink a little, then flap back up)'],['learning','Birds learn from experience (what each costs them)'],['learnLead','· learn when to lead (point vs following)'],['learnSide','· learn a favourite side of the V'],['learnSpace','· learn a following distance (tries closer / further)'],['socialLearn','· learn from watching others too'],['claimSpots','A spot another bird is already flying to counts as taken (arms grow one bird wide)'],['camFlock','Camera watches the middle of the flock (not its lead)']];
   for(const [k,lb] of toggles){
     const t=document.createElement('label'); t.className='toggle';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!P[k];
@@ -4137,6 +4295,20 @@ function _rollSm(st, q, extra, dt){
   return phi - s.x;
 }
 const m_tmpQ=new THREE.Quaternion();
+// (v34) primary-feather flex: the feather tip's angle phi follows the hand's angle th through a damped spring
+// (plus a little air drag on the tip's own swing). Returns the bend phi-th (rad, + = up), scaled by P.primaryFlex.
+function _primaryBend(st, th, dt){
+  let s=st._pf;
+  if(!s || !(dt>0) || dt>0.25){ st._pf={phi:th, v:0, th:th}; return 0; }
+  const f=Math.max(P.flapFreq||2.6, 1), wn=2*Math.PI*1.8*f, z=0.35, air=0.15*wn;
+  const thDot=(th-s.th)/dt; s.th=th;
+  const n=Math.max(2, Math.ceil(dt*wn/0.25)), h=dt/n;
+  for(let i=0;i<n;i++){
+    s.v += (wn*wn*(th-s.phi) - 2*z*wn*(s.v-thDot) - air*s.v)*h;
+    s.phi += s.v*h;
+  }
+  return clamp((s.phi-th)*(P.primaryFlex??1)*1.6, -0.9, 0.9);
+}
 function updateOneBird(st){
   const m=st.mesh; if(!m) return;
   m.root.position.copy(st.pos);
@@ -4161,21 +4333,37 @@ function updateOneBird(st){
   const flapV=st.flapping!==false && !(st.tuck>0.05);
   st._hv=_wSm(st,'_sHd', flapV ? 0.75*st._fv*Math.max(0, be) + 0.45*Math.max(0, -be) : 0, dtM, 0, true);
   const gamma=st._fv*P.maxFoldDeg*DEG;
-  m.wingRelbow.rotation.set(st._hv, -gamma, 0);
-  m.wingLelbow.rotation.set(-st._hv, +gamma, 0);
+  // (v34) with anatomy on, the elbow flexes the forearm forward by elbowLink x the hand's sweep, and the wrist
+  // sweeps the hand back past it, to the same net sweep the physics uses
+  const eps=P.anatomy ? clamp(P.elbowLink??0.45,0,1)*gamma : 0;
+  m.wingRelbowJ.rotation.y=+eps; m.wingLelbowJ.rotation.y=-eps;
+  m.wingRelbow.rotation.set(st._hv, -(gamma+eps), 0);
+  m.wingLelbow.rotation.set(-st._hv, +(gamma+eps), 0);
   const betaDotMax=Math.max(1e-3,P.flapAmp*DEG*2*Math.PI*Math.max(P.flapFreq,0.01));
   const frv=clamp(st.betaDot/betaDotMax,-1.4,1.4);
   const feath=(st.betaDot<0? P.featherAmp*DEG*frv : 0);
   const fth=_wSm(st,'_sFt', feath, dtM, 0, true), inTw=P.innerAoA*DEG+fth, outTw=P.outerAoA*DEG+fth;
-  m.wingRin.rotation.z=inTw; m.wingLin.rotation.z=-inTw;
+  m.wingRin.rotation.z=inTw; m.wingLin.rotation.z=-inTw; m.wingRfore.rotation.z=inTw; m.wingLfore.rotation.z=-inTw;
   m.wingRout.rotation.z=outTw; m.wingLout.rotation.z=-outTw;
   // wingtip primaries: base splay/lift (winglet), splaying more with tip spread / during coast
   st._spr=(st._spr==null?0:st._spr) + ((st.tel.coasting?0.4:0)-(st._spr||0))*(1-Math.exp(-dtM/0.4));   // primaries spread out gently as it glides
   const spread=clamp((P.tipSpread||0) + st._spr, 0, 1);
-  const setFea=(arr,sgn)=>arr&&arr.forEach(fg=>{ const frac=fg.userData.k/4;
-    const fan=(0.10 + 0.75*spread)*(frac-0.35);          // splay: outer quills fan back
-    const lift=(0.20 + 0.55*spread)*(0.4+0.6*frac);      // outer quills lifted more
-    fg.rotation.set(-sgn*lift, -sgn*fan, 0);
+  // (v34) the primaries are long and springy, so they bend against the beat and lag it: a tip feather is a
+  // damped spring hung on the hand. When the hand stops at the bottom of the downstroke the tips carry on
+  // and curl down; as the downstroke starts from the top, the air and their own inertia bend them up. The
+  // spring is driven by how high the hand is drawn (shoulder raise less the wrist droop), tuned to ~1.8x the
+  // wingbeat so it bends roughly in phase with the stroke and a little behind it. Drawn only; the physics
+  // sees rigid tips.
+  const bend = _primaryBend(st, be - (st._hv||0), dtM);
+  const segW=[0.22, 0.34, 0.44];                         // the thin outer lengths of the quill give most
+  const setFea=(arr,sgn)=>arr&&arr.forEach(fg=>{ const u=fg.userData.u;
+    const fin=Math.max(0,(u-0.45)/0.55);                 // the outer quills, past the bones, are the free "fingers"
+    const fan=0.25*spread*(0.45-u)                       // spreading: inner quills fan back, outer ones forward
+      + (u>0.6 ? 0.12*gamma*(u-0.6)/0.4 : 0);            // (v34) the digit gives a little as the hand folds: its quills sweep back further
+    const lift=(0.06 + 0.45*spread)*fin;                 // the fingers lift (winglet); more as they spread
+    fg.userData.sp.rotation.set(-sgn*lift, -sgn*fan, 0);
+    const j=fg.userData.j, bk=bend*(0.25+0.75*fin);      // the long free fingers bend most, the inner quills a little
+    for(let s=0;s<3;s++) j[s].rotation.x = -sgn*bk*segW[s];
   });
   setFea(m.wingRtips,+1); setFea(m.wingLtips,-1);
   // the tail twists about the body's long axis to help the roll along: into the roll while the body is still
@@ -4245,8 +4433,9 @@ function buildShadows(){
     const mat=new THREE.MeshBasicMaterial({color:0x5b6a73, transparent:true, opacity:0.3, depthWrite:false});
     st._shadowMat=mat; st._shadowPairs=[];
     st.mesh.root.traverse(o=>{
-      if(o.isMesh && o.geometry && o.geometry.type!=='BoxGeometry' && !o.userData.noShadow){   // skip the tiny primary-feather boxes (and the feet)
-        const sh=new THREE.Mesh(o.geometry, mat);
+      if(o.isMesh && o.geometry && o.geometry.type!=='BoxGeometry' && !o.userData.noShadow){   // skip the feet (and v33's primary-feather boxes)
+        const _sr=Math.random; if(o.userData.quill) Math.random=_rand0;   // (v34) the primaries' shadows don't spend seeded draws
+        const sh=new THREE.Mesh(o.geometry, mat); Math.random=_sr;
         sh.matrixAutoUpdate=false; sh.renderOrder=-1; sh.frustumCulled=false;
         shadowGroup.add(sh); st._shadowPairs.push({src:o, sh});
       }
